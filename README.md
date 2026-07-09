@@ -78,9 +78,9 @@
 
 ### MuseScore 插件 (QML)
 
-文件位置：`~/Documents/MuseScore4/Plugins/musescore-mcp-websocket.qml`
+源码位置：`musescore_plugin/musescore-mcp-websocket.qml`（安装到 `~/Documents/MuseScore4/Plugins/`）
 
-基于 [ghchen99/mcp-musescore](https://github.com/ghchen99/mcp-musescore) 项目修改。
+基于 [ghchen99/mcp-musescore](https://github.com/ghchen99/mcp-musescore) 项目修改，详见 `musescore_plugin/CHANGELOG.md`。
 
 #### 支持的命令
 
@@ -127,23 +127,28 @@ C5=72  D5=74  E5=76  F5=77  G5=79  A5=81  B5=83
 
 ### 乐队模板
 
-文件位置：`~/Documents/MuseScore4/Scores/band_template.mscx`
+项目模板位置：`templates/band_template.mscx`
 
-预配置 5 轨乐队编制（MSCX 格式），确保 staff 顺序固定：
+使用时复制到 MuseScore Scores 目录，或直接 File → Open 打开。
 
-| Staff Index | 乐器 | MIDI Program | 谱号 |
-|-------------|------|-------------|------|
-| 0 | Violin | 40 (Violin) | 高音谱 |
-| 1 | Acoustic Guitar | 25 (Acoustic Guitar) | 高音谱 |
-| 2 | Electric Bass | 33 (Electric Bass) | 低音谱 |
-| 3 | Trombone | 57 (Trombone) | 低音谱 |
-| 4 | Drum Kit | 0 (Channel 10) | 打击乐谱 |
+预配置 6 轨乐队编制（MSCX 格式），确保 staff 顺序固定：
+
+| Staff Index | 乐器 | MIDI Program | 谱号 | 备注 |
+|-------------|------|-------------|------|------|
+| 0 | Violin | 40 (Violin) | 高音谱 | 主旋律 |
+| 1 | Acoustic Guitar | 25 (Acoustic Guitar) | 高音谱 | 分解/扫弦 |
+| 2-3 | Piano | 0 (Acoustic Grand) | 高音谱+低音谱 | 大谱表，占 2 个 staff |
+| 4 | Electric Bass | 33 (Electric Bass) | 低音谱 | 根音/律动 |
+| 5 | Trombone | 57 (Trombone) | 低音谱 | 和声长音 |
+| 6 | Drum Kit | 0 (Channel 10) | 打击乐谱 | 节奏 |
+
+> **注意**：Piano 是大谱表（双行），占据 staff 2 和 3。所以 Bass 从 staff 4 开始。
 
 **为什么需要模板？** 通过 `addInstrument` API 动态添加乐器后，staff 的实际索引顺序不可预测。使用预制模板可以保证 staff 编号始终与乐器对应关系一致。
 
 ### 工作流
 
-1. 打开 MuseScore → 加载 `band_template.mscx`
+1. 打开 MuseScore → File → Open → `band_template.mscx`
 2. Plugins 菜单 → 运行 `musescore-mcp-websocket`
 3. 在 Claude Code 中描述编曲需求
 4. Claude 生成 Python 脚本通过 WebSocket 写入
@@ -317,5 +322,35 @@ asyncio.run(t())
 ### 前置条件
 
 - MuseScore Studio 4.x 已安装
-- QML 插件已复制到 `~/Documents/MuseScore4/Plugins/`
 - Python 3.10+ with `websockets` 包
+
+### 安装
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/syhan/composer.git
+cd composer
+
+# 2. 安装 Python 依赖
+uv venv && source .venv/bin/activate
+uv pip install websockets
+
+# 3. 安装 MuseScore 插件
+cp musescore_plugin/musescore-mcp-websocket.qml ~/Documents/MuseScore4/Plugins/
+
+# 4. 复制乐队模板（可选）
+cp templates/band_template.mscx ~/Documents/MuseScore4/Scores/
+```
+
+### 项目结构
+
+```
+composer/
+├── README.md                                # 项目文档
+├── .gitignore
+├── musescore_plugin/
+│   ├── musescore-mcp-websocket.qml          # MuseScore QML 插件（含修改）
+│   └── CHANGELOG.md                         # 插件修改记录
+└── templates/
+    └── band_template.mscx                   # 乐队模板（Violin/Guitar/Piano/Bass/Trombone/Drums）
+```
