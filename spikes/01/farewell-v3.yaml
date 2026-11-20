@@ -1,0 +1,148 @@
+# 本文件是 spike 1 的输入：把 v3 写成**数据**。它同时是"表达力测试"——
+# 如果这份 YAML 写不下去，说明表示层选错了。
+
+meta:
+  title: "送别 / 史诗进行曲"
+  version: v3
+  tempo: 112            # 恒定，不渐快
+  division: 480
+  grid: 16              # 每小节 16 步（十六分音符网格）
+  meter: [4, 4]
+
+# 24 小节。chord = 音级集合（0=C），bass = 低音音级
+harmony:
+  - {bar: 1,  name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 2,  name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 3,  name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 4,  name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 5,  name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 6,  name: G/B,    chord: [7, 11, 14], bass: 11}
+  - {bar: 7,  name: Am,     chord: [9, 0, 4],   bass: 9}
+  - {bar: 8,  name: F,      chord: [5, 9, 0],   bass: 5}
+  - {bar: 9,  name: C/E,    chord: [0, 4, 7],   bass: 4}
+  - {bar: 10, name: F,      chord: [5, 9, 0],   bass: 5}
+  - {bar: 11, name: Dm,     chord: [2, 5, 9],   bass: 2}
+  - {bar: 12, name: G,      chord: [7, 11, 14], bass: 7}
+  - {bar: 13, name: Am,     chord: [9, 0, 4],   bass: 9}
+  - {bar: 14, name: F,      chord: [5, 9, 0],   bass: 5}
+  - {bar: 15, name: Dm,     chord: [2, 5, 9],   bass: 2}
+  - {bar: 16, name: G,      chord: [7, 11, 14], bass: 7}
+  - {bar: 17, name: Ab,     chord: [8, 0, 3],   bass: 8}
+  - {bar: 18, name: Bb,     chord: [10, 2, 5],  bass: 10}
+  - {bar: 19, name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 20, name: G(sus4),chord: [7, 0, 2],   bass: 7}
+  - {bar: 21, name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 22, name: C,      chord: [0, 4, 7],   bass: 0}
+  - {bar: 23, name: Am,     chord: [9, 0, 4],   bass: 9}
+  - {bar: 24, name: C5,     chord: [0, 7],      bass: 0}   # 去掉三音：到了，但没定
+
+# 每个 part 的段：{bars, 内容}
+#   内容三种写法：
+#     rest                         不响
+#     pattern: {pitch, rhythm}     按和弦音型重复（角色生成器的雏形）
+#     degrees: "5:4 3:4 5:8"       级进写法（简谱式），数字:步数，8 = 高八度 1
+parts:
+  - name: Drums
+    program: 0
+    channel: 9
+    drum: true
+    segments:
+      - {bars: "1",  pattern: {pitch: snare, rhythm: "x---x---x---x---"},  velocity: 60}
+      - {bars: "2",  pattern: {pitch: snare, rhythm: "x-x-x-x-x-x-x-x-"},  velocity: 66}
+      - {bars: "3",  pattern: {pitch: snare, rhythm: "xxxxxxxxxxxxxxxx"},  velocity: 70, also: {pitch: kick, rhythm: "x-------x-------"}}
+      - {bars: "4",  pattern: {pitch: snare, rhythm: "xxxxxxxxxxxxxxxx"},  velocity: 78, also: {pitch: kick, rhythm: "x-------x---x---"}, extra: {pitch: crash, rhythm: "----------------"}}
+      - {bars: "5-12", pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 92, also: {pitch: snare, rhythm: "----x-------x---"}, extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
+      - {bars: "13-15", pattern: {pitch: kick, rhythm: "x-------x-------"}, velocity: 98, also: {pitch: snare, rhythm: "----x------xx-x-"}, extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
+      - {bars: "16", pattern: {pitch: kick, rhythm: "x-------x-------"}, velocity: 104, also: {pitch: snare, rhythm: "----x---xxxx----"}, extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
+      - {bars: "17-22", pattern: {pitch: crash, rhythm: "x---------------"}, velocity: 112, also: {pitch: kick, rhythm: "x---x---x---x---"}, extra: {pitch: snare, rhythm: "----x-------x---"}}
+      - {bars: "23", pattern: {pitch: snare, rhythm: "x---x---x---x---"}, velocity: 52}
+      - {bars: "24", pattern: {pitch: crash, rhythm: "x---------------"}, velocity: 120, also: {pitch: kick, rhythm: "x---------------"}}
+
+  - name: Bass
+    program: 33
+    channel: 1
+    base_octave: 2
+    range: [28, 57]      # E1–A3
+    segments:
+      - {bars: "1-4",  rest: true}
+      - {bars: "5-8",  pattern: {pitch: root,  rhythm: "x-------x-------"}, velocity: 72}
+      - {bars: "9-12", pattern: {pitch: root,  rhythm: "x---x---x---x---"}, velocity: 78}
+      - {bars: "13-20",pattern: {pitch: root,  rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 92}
+      - {bars: "21-22",pattern: {pitch: root,  rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 104}
+      - {bars: "23",   rest: true}          # 拆人
+      - {bars: "24",   pattern: {pitch: root,  rhythm: "x---------------"}, velocity: 118, also: {pitch: octave, rhythm: "x---------------"}}
+
+  - name: Trombone
+    program: 57
+    channel: 2
+    base_octave: 3
+    range: [40, 70]      # E2–Bb4
+    segments:
+      - {bars: "1-4",  rest: true}          # ← 开场只有鼓（spike 0 的未定项 #1，默认关）
+      - {bars: "5-16", pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 68}
+      - {bars: "17-22",pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 104, transpose: 12}
+      - {bars: "23",   rest: true}
+      - {bars: "24",   pattern: {pitch: root,  rhythm: "x---------------"}, velocity: 118, also: {pitch: fifth, rhythm: "x---------------"}}
+
+  - name: Acoustic Guitar
+    program: 25
+    channel: 3
+    base_octave: 4
+    range: [40, 88]
+    segments:
+      - {bars: "1-8",  rest: true}
+      - {bars: "9-16", pattern: {pitch: arp,   rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 62}
+      - {bars: "17-22",pattern: {pitch: chord, rhythm: "x-------x-------"}, velocity: 96}
+      - {bars: "23",   rest: true}
+      - {bars: "24",   pattern: {pitch: chord, rhythm: "x---------------"}, velocity: 100}
+
+  - name: Electric Guitar
+    program: 30
+    channel: 4
+    base_octave: 3
+    range: [40, 88]
+    segments:
+      - {bars: "1-12", rest: true}
+      - {bars: "13-16",pattern: {pitch: power, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 58}
+      - {bars: "17-22",pattern: {pitch: power, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "23",   rest: true}
+      - {bars: "24",   pattern: {pitch: power, rhythm: "x---------------"}, velocity: 112}
+
+  - name: EWI
+    program: 62
+    channel: 5
+    base_octave: 4
+    range: [48, 91]      # 实用上限
+    segments:
+      - {bars: "1-16", rest: true}          # 电吹管留到全员段才进
+      - {bars: "17-22",melody_of: Violin, unison: 0}
+      - {bars: "23-24",rest: true}
+
+  - name: Violin
+    program: 40
+    channel: 6
+    base_octave: 4
+    range: [55, 96]
+    provisional: true                        # ⚠️ 旋律是我的猜测，待你替换
+    segments:
+      - {bars: "1-4",  rest: true}
+      - {bars: "5",    degrees: "5:4 3:4 5:8"}
+      - {bars: "6",    degrees: "6:4 8:4 7:8"}
+      - {bars: "7",    degrees: "5:8 1:4 2:4"}
+      - {bars: "8",    degrees: "3:16"}
+      - {bars: "9",    degrees: "5:4 3:4 5:8"}
+      - {bars: "10",   degrees: "6:4 8:4 7:8"}
+      - {bars: "11",   degrees: "5:6 4:2 3:4 2:4"}
+      - {bars: "12",   degrees: "2:16"}
+      - {bars: "13",   degrees: "3:4 5:4 6:8"}
+      - {bars: "14",   degrees: "5:4 3:4 5:8"}
+      - {bars: "15",   degrees: "6:4 8:4 7:4 6:4"}
+      - {bars: "16",   degrees: "6:16"}
+      - {bars: "17",   degrees: "8:4 7:4 6:4 5:4"}
+      - {bars: "18",   degrees: "6:4 5:4 4:4 3:4"}
+      - {bars: "19",   degrees: "5:4 6:4 8:8",     transpose: 12}
+      - {bars: "20",   degrees: "7:16",            transpose: 12}
+      - {bars: "21",   degrees: "5:4 3:4 2:4 1:4", transpose: 12}
+      - {bars: "22",   degrees: "2:16",            transpose: 12}
+      - {bars: "23",   degrees: "5:8 3:8"}          # 拆人：只剩小提琴与军鼓
+      - {bars: "24",   degrees: "1:16"}

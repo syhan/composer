@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+
+# 生成物（一条命令即可重建，见 spikes/01/README.md）
+*.mid
+*.wav
+*.mp3
