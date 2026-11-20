@@ -36,6 +36,27 @@ harmony:
   - {bar: 23, name: Am,     chord: [9, 0, 4],   bass: 9}
   - {bar: 24, name: C5,     chord: [0, 7],      bass: 0}   # 去掉三音：到了，但没定
 
+# 在场路径（声明式）：每小节谁在响。空集合法（P11/P12）。
+presence:
+  - {bars: "1-4",   parts: [Drums]}
+  - {bars: "5-8",   parts: [Drums, Bass, Trombone, Violin]}
+  - {bars: "9-12",  parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar]}
+  - {bars: "13-16", parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar]}
+  - {bars: "17-22", parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar, EWI]}
+  - {bars: "23",    parts: [Drums, Violin]}
+  - {bars: "24",    parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar]}
+
+# 动态（CC7 通道音量）：velocity 只能做音符内的力度，段落级强弱要靠这个
+dynamics:
+  - {bars: "1-2",   level: 0.26}
+  - {bars: "3-4",   level: 0.36}
+  - {bars: "5-8",   level: 0.46}
+  - {bars: "9-12",  level: 0.58}
+  - {bars: "13-16", level: 0.70}
+  - {bars: "17-22", level: 0.94}
+  - {bars: "23",    level: 0.42}
+  - {bars: "24",    level: 1.00}
+
 # 每个 part 的段：{bars, 内容}
 #   内容三种写法：
 #     rest                         不响

@@ -168,6 +168,11 @@ def vlq(n):
     return bytes(reversed(out))
 
 
+def meta_text(text):
+    b = text.encode()
+    return b"\xff\x03" + vlq(len(b)) + b
+
+
 def track_chunk(events):
     """events: list of (abs_tick, order, bytes)"""
     events = sorted(events, key=lambda e: (e[0], e[1]))
@@ -177,6 +182,15 @@ def track_chunk(events):
         last = tick
     data += vlq(0) + b"\xff\x2f\x00"
     return b"MTrk" + len(data).to_bytes(4, "big") + data
+
+
+def dynamics_map(spec):
+    total = len(spec["harmony"])
+    lvl = {}
+    for seg in spec.get("dynamics", []):
+        for b in parse_bars(seg["bars"], total):
+            lvl[b] = seg["level"]
+    return lvl
 
 
 def build_midi(spec, bars, melody=True):
@@ -189,17 +203,21 @@ def build_midi(spec, bars, melody=True):
     tempo = int(60_000_000 / meta["tempo"])
     conductor.append((0, 0, b"\xff\x51\x03" + tempo.to_bytes(3, "big")))
     conductor.append((0, 1, b"\xff\x58\x04" + bytes([meta["meter"][0], 2, 24, 8])))
-    conductor.append((0, 2, b"\xff\x03" + bytes([len(meta["title"])]) + meta["title"].encode()))
+    conductor.append((0, 2, meta_text(meta["title"])))
     tracks = [track_chunk(conductor)]
 
     for part in spec["parts"]:
         if not melody and part.get("provisional"):
-            tracks.append(track_chunk([(0, 0, b"\xff\x03" + bytes([9]) + b"(omitted)")]))
+            tracks.append(track_chunk([(0, 0, meta_text("(omitted)"))]))
             continue
         ch = part["channel"]
-        evs = [(0, 0, b"\xff\x03" + bytes([len(part["name"])]) + part["name"].encode()),
+        evs = [(0, 0, meta_text(part["name"])),
                (0, 1, bytes([0xC0 | ch, part["program"]]))]
+        lvl = dynamics_map(spec)
         for bar in sorted(bars):
+            if bar in lvl:
+                evs.append(((bar - 1) * grid * tps, 1,
+                            bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
             for (p, st, du, pitches, vel) in bars[bar]:
                 if p is not part:
                     continue
@@ -249,6 +267,32 @@ def presence(spec, bars):
         print(f"  {b:>3}  {chord_at(spec['harmony'], b)['name']:<12} {len(names)}  {', '.join(names)}")
 
 
+def apply_presence(spec, bars):
+    """在场路径是**声明**的，不是从各声部区间推出来的（spike 1 的缺口 #2）。"""
+    ladder = spec.get("presence")
+    if not ladder:
+        return bars, []
+    declared = {}
+    for seg in ladder:
+        for b in parse_bars(seg["bars"], len(spec["harmony"])):
+            declared[b] = set(seg["parts"])
+    out, issues = {}, []
+    for b, evs in bars.items():
+        allowed = declared.get(b)
+        if allowed is None:
+            out[b] = evs
+            continue
+        kept = [e for e in evs if e[0]["name"] in allowed]
+        for (part, *_r) in evs:
+            if part["name"] not in allowed:
+                issues.append(f"bar {b}: {part['name']} 有音符但不在场路径里（已静音）")
+        for name in sorted(allowed):
+            if not any(e[0]["name"] == name for e in kept):
+                issues.append(f"bar {b}: {name} 声明在场但没有音符")
+        out[b] = kept
+    return out, sorted(set(issues))
+
+
 def lint(spec, bars):
     """最小可用 lint：音域越界 + 段落重叠。（这正是 C1 说的“编译器报错”。）"""
     problems = []
@@ -283,7 +327,7 @@ def lint(spec, bars):
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "spikes/01/farewell-v3.yaml"
     spec = yaml.safe_load(open(path))
-    bars = expand(spec)
+    bars, presence_issues = apply_presence(spec, expand(spec))
 
     out = path.rsplit(".", 1)[0]
     midi = build_midi(spec, bars, melody=True)
@@ -293,6 +337,10 @@ def main():
 
     print(f"wrote {out}.mid  ({len(midi)} bytes)")
     print(f"wrote {out}-nomelody.mid  ({len(midi2)} bytes)")
+    if presence_issues:
+        print("\n  在场路径检查:")
+        for m in presence_issues:
+            print("    - " + m)
     roll(spec, bars)
     presence(spec, bars)
     lint(spec, bars)
