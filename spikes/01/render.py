@@ -54,7 +54,7 @@ def resolve(pitch, h, part, bar, prev=None):
         return [p]
     if pitch == "nearest":
         # 声部进行：取离上一个音最近的弦内音（Tymoczko 的距离最小化）
-        tones = [base + (pc - root_pc) % 12 + 12 * k
+        tones = [root + (pc - root_pc) % 12 + 12 * k
                  for pc in h["chord"] for k in (-1, 0, 1)]
         if prev is None:
             return [min(t for t in tones if t >= base - 6)]
@@ -62,15 +62,15 @@ def resolve(pitch, h, part, bar, prev=None):
     if pitch == "fifth":
         return [root + 7]
     if pitch == "third":
-        return [root + h["chord"][1] - h["chord"][0]]
+        return [root + (h["chord"][1] - h["chord"][0]) % 12]
     if pitch == "octave":
         return [root + 12]
     if pitch == "power":
         return [root, root + 7]
     if pitch == "chord":
-        return [base + (pc - root_pc) % 12 for pc in h["chord"]]
+        return [root + (pc - root_pc) % 12 for pc in h["chord"]]
     if pitch == "arp":
-        tones = [base + (pc - root_pc) % 12 for pc in h["chord"]]
+        tones = [root + (pc - root_pc) % 12 for pc in h["chord"]]
         return tones
     raise ValueError(pitch)
 
@@ -111,6 +111,7 @@ def expand(spec):
                 continue
 
             if "melody_of" in seg:
+                part["_doubling"] = True
                 for b in blist:
                     src = melody_cache.get(seg["melody_of"], {}).get(b, [])
                     bars.setdefault(b, []).extend(
@@ -127,8 +128,14 @@ def expand(spec):
                 if "degrees" in seg:
                     step = 0
                     for tok in seg["degrees"].split():
-                        deg, dur = tok.split(":")
-                        evs.append((step, int(dur), [scale_degree(int(deg), part["base_octave"], tr)], vel))
+                        deg_s, dur = tok.split(":")
+                        # 支持 1'（高八度）与 7,（低八度）两种简谱写法
+                        shift = 0
+                        while deg_s and deg_s[-1] in "'\u2019,":
+                            shift += 7 if deg_s[-1] in "'\u2019" else -7
+                            deg_s = deg_s[:-1]
+                        evs.append((step, int(dur),
+                                    [scale_degree(int(deg_s) + shift, part["base_octave"], tr)], vel))
                         step += int(dur)
                 elif "pattern" in seg:
                     layers = [(seg["pattern"], seg.get("velocity", 80))]
@@ -207,7 +214,7 @@ def build_midi(spec, bars, melody=True):
     tracks = [track_chunk(conductor)]
 
     for part in spec["parts"]:
-        if not melody and part.get("provisional"):
+        if not melody and part.get("lead"):
             tracks.append(track_chunk([(0, 0, meta_text("(omitted)"))]))
             continue
         ch = part["channel"]
@@ -293,6 +300,24 @@ def apply_presence(spec, bars):
     return out, sorted(set(issues))
 
 
+def check_harmony(spec, bars):
+    """弦内音的拼写自检：非和弦音的数量。（本可以早点有这个检查，
+    它能在第一秒抓住"和弦音按 C 为根算"这个 bug。）"""
+    problems = []
+    for b, evs in bars.items():
+        h = chord_at(spec["harmony"], b)
+        allowed = {pc % 12 for pc in h["chord"]}
+        for (part, st, du, pitches, vel) in evs:
+            if part.get("drum") or part.get("lead") or part.get("_doubling"):
+                continue
+            for p in pitches:
+                if p % 12 not in allowed:
+                    problems.append(
+                        f"bar {b} {part['name']}: {note_name(p)} 不属于 {h['name']} "
+                        f"({sorted(PITCH_NAMES[x] for x in allowed)})")
+    return sorted(set(problems))
+
+
 def lint(spec, bars):
     """最小可用 lint：音域越界 + 段落重叠。（这正是 C1 说的“编译器报错”。）"""
     problems = []
@@ -316,6 +341,13 @@ def lint(spec, bars):
                     problems.append(f"bar {b} {part['name']}: 段落重叠（"
                                     f"{seen[b].get('bars')} 与 {seg.get('bars')}）")
                 seen[b] = seg
+    spelling = check_harmony(spec, bars)
+    print("\n  和声拼写自检:")
+    if not spelling:
+        print("    (clean)")
+    for m in spelling[:20]:
+        print("    - " + m)
+
     print("\n  lint:")
     if not problems:
         print("    (clean)")
