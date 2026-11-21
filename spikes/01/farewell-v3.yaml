@@ -11,7 +11,7 @@ ensemble: ../../ensembles/band.yaml
 
 meta:
   title: "送别 / 史诗进行曲"
-  version: v5
+  version: v4
   tempo: 112
   division: 480
   grid: 16
@@ -116,10 +116,10 @@ parts:
     base_octave: 4
     segments:
       - {bars: "1-2",  rest: true}
-      - {bars: "3-16", pattern: {pitch: wide, rhythm: "x-------x-------"}, velocity: 70}
-      - {bars: "17-22",pattern: {pitch: wide, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "3-16", pattern: {pitch: frame, rhythm: "x-------x-------"}, velocity: 70}
+      - {bars: "17-22",pattern: {pitch: frame, rhythm: "x---------------"}, velocity: 100}
       - {bars: "23",   rest: true}
-      - {bars: "24",   pattern: {pitch: wide, rhythm: "x---------------"}, velocity: 110}
+      - {bars: "24",   pattern: {pitch: frame, rhythm: "x---------------"}, velocity: 110}
 
   - instrument: acoustic-guitar
     base_octave: 4

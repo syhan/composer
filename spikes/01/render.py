@@ -97,8 +97,10 @@ def resolve(pitch, h, part, prev=None):
         return [root, root + 7]
     if pitch == "chord":
         return [root + iv(pc) for pc in h["chord"]]
-    if pitch == "wide":                     # 左手根音 + 右手和弦（钢琴）
+    if pitch == "wide":                     # 左手根音 + 右手和弦（贴着旋律音区，容易糊）
         return [root - 12] + [root + iv(pc) for pc in h["chord"]]
+    if pitch == "frame":                    # 框：低音在下、和弦整体上一个八度，把中频让给旋律
+        return [root - 12] + [root + 12 + iv(pc) for pc in h["chord"]]
     if pitch == "arp":
         return [root + iv(pc) for pc in h["chord"]]
     if pitch == "nearest":

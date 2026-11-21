@@ -3,6 +3,8 @@
 **约定：这里只放"被接受的版本"，不放每次渲染的工作产物。**
 工作渲染留在 `spikes/01/`（已 gitignore）。一次迭代 6 条命令，随时重建。
 
+**v3 与 v4 可以直接 A/B**，两者只差一处改动（见下）。
+
 | 文件 | 说明 |
 |---|---|
 | `farewell-epic-march-v3.mp3` | FluidR3_GM 真音源，全曲 52 秒 |
@@ -10,6 +12,19 @@
 | `farewell-epic-march-v3.mid` | 事件层，可丢进任何 DAW / MuseScore |
 | `farewell-epic-march-v3-no-melody.mp3` | 去掉小提琴旋律：只听配器与动态 |
 | `farewell-epic-march-v3-toy-synth.mp3` | 零依赖合成器版（没有 soundfont 时的备份） |
+| `farewell-epic-march-v4.*` | **v4 = 修掉钢琴与旋律的音区碰撞** |
+
+## v3 → v4 只改了一处
+
+钢琴原本是 `wide`（左手根音 + 右手和弦贴着旋律音区），右手正压在小提琴身上：
+
+| 一对 | v3 中位音程 | v4 中位音程 |
+|---|---|---|
+| Piano × Violin | **7 半音**（纯五度，糊） | **14 半音** |
+| Acoustic Guitar × Piano | **4 半音** | **12 半音** |
+
+改成 `frame`：低音留在下面，和弦整体上一个八度，把中频让给旋律。
+其余一个音都没动——所以 A/B 时听到的差别，就是"中频让开"这一件事。
 
 ## 这一版是什么
 
