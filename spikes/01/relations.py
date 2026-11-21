@@ -19,7 +19,7 @@ GRID = 16
 def load(path):
     spec = yaml.safe_load(open(path))
     ens, insts = load_ensemble(spec, path)
-    bars, parts = expand(spec, insts)
+    bars, parts, tracks = expand(spec, insts)
     bars = autoplace(bars, parts, spec["meta"]["grid"])
     bars, _ = apply_presence(spec, bars)
     return spec, bars, parts

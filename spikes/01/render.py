@@ -120,12 +120,52 @@ def runs(rhythm, grid):
     return [(o, (ons[i + 1] if i + 1 < len(ons) else grid) - o) for i, o in enumerate(ons)]
 
 
+def build_material(spec):
+    """素材轨：与声部无关的时间线。register 决定简谱音级落在哪个八度。
+
+    轨不知道自己由谁演奏——这是阶段 A 的全部意义。
+    """
+    tracks = {}
+    for tr in spec.get("material") or []:
+        reg = tr.get("register", 4)
+        ev = {}
+        for seg in tr["timeline"]:
+            blist = parse_bars(seg["bars"], None)
+            if "use" in seg:                       # 复用另一条轨：八度叠置 = 多一条实例
+                src = tracks.get(seg["use"])
+                if src is None:
+                    raise SystemExit(f"素材 {tr['id']} 引用了尚未定义的轨 {seg['use']}")
+                shift = 12 * (seg.get("register", reg) - src["register"])
+                for b in blist:
+                    ev[b] = [(st, du, [p + shift for p in ps], v)
+                             for (st, du, ps, v) in src["events"].get(b, [])]
+                continue
+            if "degrees" not in seg:
+                raise SystemExit(f"素材 {tr['id']} 的 timeline 段既无 degrees 也无 use: {seg}")
+            vel = seg.get("velocity", 80)
+            for b in blist:
+                step, out = 0, []
+                for tok in seg["degrees"].split():
+                    deg_s, dur = tok.split(":")
+                    shift = 0
+                    while deg_s and deg_s[-1] in "'\u2019,":
+                        shift += 7 if deg_s[-1] in "'\u2019" else -7
+                        deg_s = deg_s[:-1]
+                    out.append((step, int(dur), [scale_degree(int(deg_s) + shift, reg)], vel))
+                    step += int(dur)
+                ev[b] = out
+        tracks[tr["id"]] = {"register": reg, "events": ev,
+                             "theme": bool(tr.get("theme")),
+                             "derived_from": tr.get("derived_from")}
+    return tracks
+
+
 def expand(spec, insts):
     grid = spec["meta"]["grid"]
     total = len(spec["harmony"])
     harmony = spec["harmony"]
     bars = {}
-    melody_cache = {}
+    tracks = build_material(spec)
 
     parts = []
     for ps in spec["parts"]:
@@ -135,25 +175,30 @@ def expand(spec, insts):
         d.setdefault("base_octave", 4)
         parts.append(d)
 
-    order = [p for p in parts if "melody_of" not in str(p.get("segments"))]
-    order += [p for p in parts if "melody_of" in str(p.get("segments"))]
-
-    for part in order:
+    for part in parts:
         is_drum = part.get("drum", False)
-        for seg in part["segments"]:
+
+        # 素材：这个声部演奏哪条轨。音区由轨决定，不在这里移八度（C16）。
+        for seg in part.get("carries") or []:
+            if part.get("place") == "auto":
+                raise SystemExit(
+                    f"{part['name']}: 承载素材的声部不能用 place: auto —— "
+                    f"音区位移必须显式声明（C16）")
+            tr = tracks.get(seg["track"])
+            if tr is None:
+                raise SystemExit(f"{part['name']}: 承载了不存在的素材轨 {seg['track']}")
+            part["_carrier"] = True
+            if tr["theme"]:
+                part["_theme"] = True
+            for b in parse_bars(seg["bars"], total):
+                for (st, du, ps, v) in tr["events"].get(b, []):
+                    bars.setdefault(b, []).append((part, st, du, ps, v))
+
+        for seg in part.get("segments") or []:
             blist = parse_bars(seg["bars"], total)
             if seg.get("rest"):
                 for b in blist:
                     bars.setdefault(b, [])
-                continue
-
-            if "melody_of" in seg:
-                part["_doubling"] = True
-                for b in blist:
-                    src = melody_cache.get(seg["melody_of"], {}).get(b, [])
-                    bars.setdefault(b, []).extend(
-                        (part, st, du, [p + seg.get("unison", 0) for p in ps], v)
-                        for (st, du, ps, v) in src)
                 continue
 
             for b in blist:
@@ -194,10 +239,8 @@ def expand(spec, insts):
                             for st, du in runs(rhythm, grid):
                                 evs.append((st, du, [p + tr for p in ps], lvel))
                 bars.setdefault(b, []).extend((part, st, du, ps, v) for (st, du, ps, v) in evs)
-                melody_cache.setdefault(part["id"], {}).setdefault(b, []).extend(
-                    (st, du, ps, v) for (st, du, ps, v) in evs)
 
-    return bars, parts
+    return bars, parts, tracks
 
 
 # ---------- 音区：推荐 / 人为覆盖 / 自动择位 ----------
@@ -262,7 +305,7 @@ def apply_presence(spec, bars):
 
 def check_harmony(spec, bars, parts):
     problems = []
-    skip = {p["id"] for p in parts if p.get("lead") or p.get("_doubling")}
+    skip = {p["id"] for p in parts if p.get("_carrier")}
     for b, evs in bars.items():
         h = chord_at(spec["harmony"], b)
         allowed = {pc % 12 for pc in h["chord"]} | {h["bass"] % 12}
@@ -293,7 +336,7 @@ def lint(bars, parts):
                                  f"{note_name(lo_c)}–{note_name(hi_c)}")
     for part in parts:
         seen = {}
-        for seg in part["segments"]:
+        for seg in part.get("segments") or []:
             for b in parse_bars(seg["bars"], max(bars) or 1):
                 if b in seen and not (seen[b].get("rest") and seg.get("rest")):
                     errors.append(f"bar {b} {part['name']}: 段落重叠"
@@ -407,7 +450,7 @@ def build_midi(spec, bars, parts, melody=True):
     lvl = dynamics_map(spec)
 
     for part in parts:
-        if not melody and part.get("lead"):
+        if not melody and part.get("_theme"):
             tracks.append(track_chunk([(0, 0, meta_text("(omitted)"))]))
             continue
         ch = part["channel"]
@@ -466,7 +509,7 @@ def main():
     spec = yaml.safe_load(open(path))
     ens, insts = load_ensemble(spec, path)
 
-    bars, parts = expand(spec, insts)
+    bars, parts, tracks = expand(spec, insts)
     bars = autoplace(bars, parts, spec["meta"]["grid"])
     bars, pis = apply_presence(spec, bars)
 

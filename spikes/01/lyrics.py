@@ -11,6 +11,8 @@
 import sys
 import yaml
 
+import render
+
 PHRASES = [
     ("5-8",   "长亭外古道边芳草碧连天"),
     ("9-12",  "晚风拂柳笛声残夕阳山外山"),
@@ -20,25 +22,20 @@ PHRASES = [
 ]
 
 
-def notes_per_bar(part):
+def notes_per_bar(track):
+    """旋律现在住在素材轨里，不再住在小提琴里。"""
     out = {}
-    for seg in part["segments"]:
-        if "degrees" not in seg:
-            continue
-        b = seg["bars"]
-        if isinstance(b, int) or (isinstance(b, str) and "-" not in b):
-            out[int(b)] = len(seg["degrees"].split())
-        else:
-            a, z = str(b).split("-")
-            for i, bar in enumerate(range(int(a), int(z) + 1)):
-                out[bar] = len(seg["degrees"].split())
+    for seg in track["timeline"]:
+        n = len(seg["degrees"].split())
+        for b in render.parse_bars(seg["bars"], None):
+            out[b] = n
     return out
 
 
 def main():
     spec = yaml.safe_load(open(sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"))
-    lead = next(p for p in spec["parts"] if p.get("lead"))
-    npb = notes_per_bar(lead)
+    theme = next(t for t in spec["material"] if t.get("theme"))
+    npb = notes_per_bar(theme)
 
     print(f"{'编排/旋律':<10}{'音数':>4}  {'字':<16}{'拖腔':>4}   说明")
     peaks = []

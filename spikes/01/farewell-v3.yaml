@@ -64,6 +64,45 @@ dynamics:
   - {bars: "23",    level: 0.42}
   - {bars: "24",    level: 1.00}
 
+# ---------- 素材层（骨架）----------
+# 素材与"谁演奏"分离：这里只写什么音乐、在哪几小节。
+# register 决定简谱音级落在哪个八度（4 = 中央 C 所在八度）。
+material:
+  - id: melody
+    theme: true            # 主题：-nomelody 渲染会省掉它的承载者
+    pin: frozen
+    register: 4
+    timeline:
+      - {bars: "5",   degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "6",   degrees: "6:4 8:4 5:8"}
+      - {bars: "7",   degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "8",   degrees: "1:16"}
+      - {bars: "9",   degrees: "5:4 3:4 5:4 8:4"}
+      - {bars: "10",  degrees: "6:4 8:4 5:8"}
+      - {bars: "11",  degrees: "5:4 1:2 2:2 3:2 2:2 1:4"}
+      - {bars: "12",  degrees: "2:8"}
+      - {bars: "13",  degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "14",  degrees: "6:4 8:4 5:8"}
+      - {bars: "15",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "16",  degrees: "1:16"}
+      - {bars: "17",  degrees: "6:8 8:4 8:4"}
+      - {bars: "18",  degrees: "7:4 6:4 7:4 8:4"}
+      - {bars: "19",  degrees: "6:2 7:2 8:2 6:2 6:2 5:2 3:2 1:2"}
+      - {bars: "20",  degrees: "2:16"}
+      - {bars: "21",  degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "22",  degrees: "6:4 8:4 5:8"}
+      - {bars: "23",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "24",  degrees: "1:16"}
+
+  # 八度叠置 = 另一条素材实例（不是给 carries 加参数）。
+  # derived_from 是给 fidelity 追溯用的：位移 -12，纯音区（tonal: false）。
+  - id: melody_low
+    derived_from: melody
+    register: 3
+    timeline:
+      - {bars: "17-22", use: melody}
+      - {bars: "24",    use: melody}
+
 parts:
   - instrument: drum-kit
     segments:
@@ -141,42 +180,17 @@ parts:
 
   - instrument: lead-guitar
     base_octave: 3
-    segments:
-      - {bars: "1-16", rest: true}
-      - {bars: "17-22",melody_of: violin, unison: -12}   # 主题低八度加倍：C12 要的是齐奏
-      - {bars: "23",   rest: true}
-      - {bars: "24",   melody_of: violin, unison: -12}
+    carries:
+      - {bars: "17-22", track: melody_low}
+      - {bars: "24",    track: melody_low}
 
   - instrument: ewi
     base_octave: 4
-    segments:
-      - {bars: "1-16", rest: true}
-      - {bars: "17-22",melody_of: violin, unison: 0}
-      - {bars: "23",   rest: true}
-      - {bars: "24",   melody_of: violin, unison: 0}
+    carries:
+      - {bars: "17-22", track: melody}      # 同度齐奏 = 多承载者，素材只有一份
+      - {bars: "24",    track: melody}
 
   - instrument: violin
     base_octave: 4
-    lead: true
-    segments:
-      - {bars: "1-4", rest: true}
-      - {bars: "5",   degrees: "5:4 3:4 5:2 8:2 7:4"}
-      - {bars: "6",   degrees: "6:4 8:4 5:8"}
-      - {bars: "7",   degrees: "5:4 2:4 3:2 4:2 7,:4"}
-      - {bars: "8",   degrees: "1:16"}
-      - {bars: "9",   degrees: "5:4 3:4 5:4 8:4"}
-      - {bars: "10",  degrees: "6:4 8:4 5:8"}
-      - {bars: "11",  degrees: "5:4 1:2 2:2 3:2 2:2 1:4"}
-      - {bars: "12",  degrees: "2:8"}
-      - {bars: "13",  degrees: "5:4 3:4 5:2 8:2 7:4"}
-      - {bars: "14",  degrees: "6:4 8:4 5:8"}
-      - {bars: "15",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
-      - {bars: "16",  degrees: "1:16"}
-      - {bars: "17",  degrees: "6:8 8:4 8:4"}
-      - {bars: "18",  degrees: "7:4 6:4 7:4 8:4"}
-      - {bars: "19",  degrees: "6:2 7:2 8:2 6:2 6:2 5:2 3:2 1:2"}
-      - {bars: "20",  degrees: "2:16"}
-      - {bars: "21",  degrees: "5:4 3:4 5:2 8:2 7:4"}
-      - {bars: "22",  degrees: "6:4 8:4 5:8"}
-      - {bars: "23",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
-      - {bars: "24",  degrees: "1:16"}
+    carries:
+      - {bars: "5-24", track: melody}
