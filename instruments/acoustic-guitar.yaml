@@ -1,0 +1,13 @@
+id: acoustic-guitar
+name: Acoustic Guitar
+family: plucked
+gm_program: 25
+polyphonic: true
+staves: 1
+range:   [40, 88]    # E2–E6 实际音高
+comfort: [45, 84]
+roles: [comp, arp, pad]
+idioms:
+  max_span: 5          # 把位跨度（品）
+  open_position: true
+  notes: "和弦指型可实现性优先于声部进行"

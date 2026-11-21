@@ -1,18 +1,45 @@
 #!/usr/bin/env python3
-"""spike 1: spec (YAML) -> MIDI + ASCII piano roll.
+"""spike 1: spec (YAML) -> MIDI + ASCII piano roll + lint.
 
-Deliberately dependency-free apart from PyYAML. No MuseScore, no DAW,
-no network: this is the inner loop, and it has to run headless.
+编制是输入（ensembles/*.yaml + instruments/*.yaml），不是代码里的常量。
+除 PyYAML 外零依赖：内环必须能 headless 跑，2 秒内出声。
 """
+import os
 import sys
 import yaml
 
-PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+PITCH_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
 MAJOR = [0, 2, 4, 5, 7, 9, 11]
-DRUMS = {"kick": 36, "snare": 38, "hh": 42, "ohh": 46, "crash": 49, "tom": 45, "ride": 51}
 
 
-# ---------- spec expansion ----------
+# ---------- 编制（输入）----------
+
+def load_ensemble(spec, spec_path):
+    """编制是输入参数：谁在场、什么音区、什么移调，全从 YAML 读。"""
+    rel = spec.get("ensemble")
+    if not rel:
+        raise SystemExit("spec 里缺 ensemble: —— 编制必须显式声明，不能隐含")
+    ens_path = os.path.join(os.path.dirname(os.path.abspath(spec_path)), rel)
+    ens = yaml.safe_load(open(ens_path))
+    inst_dir = os.path.join(os.path.dirname(ens_path), "..", "instruments")
+
+    insts, ch = {}, 0
+    for seat in ens["seats"]:
+        iid = seat["instrument"]
+        d = dict(yaml.safe_load(open(os.path.join(inst_dir, iid + ".yaml"))))
+        d.update(seat.get("overrides") or {})
+        if d.get("drum"):
+            d["channel"] = 9
+        else:
+            ch += (ch == 9)
+            d["channel"] = ch
+            ch += 1
+        d["seat"] = seat
+        insts[iid] = d
+    return ens, insts
+
+
+# ---------- spec 展开 ----------
 
 def parse_bars(spec, total):
     if isinstance(spec, int):
@@ -36,70 +63,70 @@ def note_name(p):
 
 
 def scale_degree(deg, base_octave, transpose=0):
-    """简谱式：1..7 为 C 大调音级，8 = 高八度 1。"""
+    """简谱式：1..7 为 C 大调音级；8 = 高八度 1；0 = 低八度 7。"""
     semis = MAJOR[(deg - 1) % 7] + 12 * ((deg - 1) // 7)
     return (base_octave + 1) * 12 + semis + transpose
 
 
-def resolve(pitch, h, part, bar, prev=None):
-    """和弦音型 -> 具体音高集合。"""
+def resolve(pitch, h, part, prev=None):
+    """和弦音型 -> 具体音高。注意：音程必须从**和弦根音**算，不是从 C。"""
     base = (part["base_octave"] + 1) * 12
     root_pc = h["chord"][0]
-    bass_pc = h["bass"]
     root = base + root_pc
+    iv = lambda pc: (pc - root_pc) % 12
     if pitch == "root":
-        p = (part["base_octave"] + 1) * 12 + bass_pc
+        p = (part["base_octave"] + 1) * 12 + h["bass"]
         while p < base:
             p += 12
         return [p]
-    if pitch == "nearest":
-        # 声部进行：取离上一个音最近的弦内音（Tymoczko 的距离最小化）
-        tones = [root + (pc - root_pc) % 12 + 12 * k
-                 for pc in h["chord"] for k in (-1, 0, 1)]
-        if prev is None:
-            return [min(t for t in tones if t >= base - 6)]
-        return [min(tones, key=lambda t: (abs(t - prev), t))]
     if pitch == "fifth":
         return [root + 7]
     if pitch == "third":
-        return [root + (h["chord"][1] - h["chord"][0]) % 12]
+        return [root + iv(h["chord"][1])]
     if pitch == "octave":
         return [root + 12]
     if pitch == "power":
         return [root, root + 7]
     if pitch == "chord":
-        return [root + (pc - root_pc) % 12 for pc in h["chord"]]
+        return [root + iv(pc) for pc in h["chord"]]
+    if pitch == "wide":                     # 左手根音 + 右手和弦（钢琴）
+        return [root - 12] + [root + iv(pc) for pc in h["chord"]]
     if pitch == "arp":
-        tones = [root + (pc - root_pc) % 12 for pc in h["chord"]]
-        return tones
+        return [root + iv(pc) for pc in h["chord"]]
+    if pitch == "nearest":
+        tones = [root + iv(pc) + 12 * k for pc in h["chord"] for k in (-1, 0, 1)]
+        if prev is None:
+            return [min(t for t in tones if t >= base - 6)]
+        return [min(tones, key=lambda t: (abs(t - prev), t))]
     raise ValueError(pitch)
 
 
 def onsets(rhythm, grid):
-    rhythm = (rhythm + "-" * grid)[:grid]
-    return [i for i, c in enumerate(rhythm) if c == "x"]
+    return [i for i, c in enumerate((rhythm + "-" * grid)[:grid]) if c == "x"]
 
 
 def runs(rhythm, grid):
-    """x 的位置 -> 到下一个 x 的步数（连奏长度）。"""
     ons = onsets(rhythm, grid)
-    out = []
-    for i, o in enumerate(ons):
-        nxt = ons[i + 1] if i + 1 < len(ons) else grid
-        out.append((o, nxt - o))
-    return out
+    return [(o, (ons[i + 1] if i + 1 < len(ons) else grid) - o) for i, o in enumerate(ons)]
 
 
-def expand(spec):
+def expand(spec, insts):
     grid = spec["meta"]["grid"]
     total = len(spec["harmony"])
     harmony = spec["harmony"]
-    bars = {}          # bar -> list of (part, step, dur_steps, pitches, velocity)
+    bars = {}
     melody_cache = {}
 
-    # 两轮：先展开所有本体声部，再展开 melody_of（对位/齐奏）
-    order = [p for p in spec["parts"] if "melody_of" not in str(p.get("segments"))]
-    order += [p for p in spec["parts"] if "melody_of" in str(p.get("segments"))]
+    parts = []
+    for ps in spec["parts"]:
+        d = dict(insts[ps["instrument"]])
+        d.update({k: v for k, v in ps.items() if k != "instrument"})
+        d["id"] = ps["instrument"]
+        d.setdefault("base_octave", 4)
+        parts.append(d)
+
+    order = [p for p in parts if "melody_of" not in str(p.get("segments"))]
+    order += [p for p in parts if "melody_of" in str(p.get("segments"))]
 
     for part in order:
         is_drum = part.get("drum", False)
@@ -116,20 +143,17 @@ def expand(spec):
                     src = melody_cache.get(seg["melody_of"], {}).get(b, [])
                     bars.setdefault(b, []).extend(
                         (part, st, du, [p + seg.get("unison", 0) for p in ps], v)
-                        for (st, du, ps, v) in src
-                    )
+                        for (st, du, ps, v) in src)
                 continue
 
             for b in blist:
                 h = chord_at(harmony, b)
-                vel = seg.get("velocity", 80)
-                tr = seg.get("transpose", 0)
+                vel, tr = seg.get("velocity", 80), seg.get("transpose", 0)
                 evs = []
                 if "degrees" in seg:
                     step = 0
                     for tok in seg["degrees"].split():
                         deg_s, dur = tok.split(":")
-                        # 支持 1'（高八度）与 7,（低八度）两种简谱写法
                         shift = 0
                         while deg_s and deg_s[-1] in "'\u2019,":
                             shift += 7 if deg_s[-1] in "'\u2019" else -7
@@ -139,143 +163,67 @@ def expand(spec):
                         step += int(dur)
                 elif "pattern" in seg:
                     layers = [(seg["pattern"], seg.get("velocity", 80))]
-                    for k in ("also", "extra"):
-                        if k in seg:
-                            layers.append((seg[k], seg.get("velocity", 80) if k == "also" else max(30, seg.get("velocity", 80) - 30)))
+                    if "also" in seg:
+                        layers.append((seg["also"], seg.get("velocity", 80)))
+                    if "extra" in seg:
+                        layers.append((seg["extra"], max(30, seg.get("velocity", 80) - 30)))
                     for pat, lvel in layers:
                         pitch, rhythm = pat["pitch"], pat["rhythm"]
                         if is_drum:
+                            dmap = part["drum_map"]
                             for st, du in runs(rhythm, grid):
-                                evs.append((st, 1, [DRUMS[pitch]], lvel))
+                                evs.append((st, 1, [dmap[pitch]], lvel))
                         elif pitch == "arp":
-                            tones = resolve("arp", h, part, b)
+                            tones = resolve("arp", h, part)
                             for st, du in runs(rhythm, grid):
                                 evs.append((st, du, [tones[(st // 2) % len(tones)]], lvel))
                         else:
-                            prev = part.setdefault("_prev", None)
-                            ps = resolve(pitch, h, part, b, prev)
+                            prev = part.get("_prev")
+                            ps = resolve(pitch, h, part, prev)
                             part["_prev"] = ps[0]
                             for st, du in runs(rhythm, grid):
                                 evs.append((st, du, [p + tr for p in ps], lvel))
                 bars.setdefault(b, []).extend((part, st, du, ps, v) for (st, du, ps, v) in evs)
-                melody_cache.setdefault(part["name"], {}).setdefault(b, []).extend(
+                melody_cache.setdefault(part["id"], {}).setdefault(b, []).extend(
                     (st, du, ps, v) for (st, du, ps, v) in evs)
 
+    return bars, parts
+
+
+# ---------- 音区：推荐 / 人为覆盖 / 自动择位 ----------
+
+def autoplace(bars, parts, grid):
+    """place: auto —— 选一个八度，使材料尽量待在**舒适区**里（C1 的"推荐"）。"""
+    for part in parts:
+        if part.get("place") != "auto" or part.get("drum"):
+            continue
+        lo_r, hi_r = part["range"]
+        lo_c, hi_c = part.get("comfort") or part["range"]
+        best = None
+        for shift in range(-24, 25, 12):
+            cost = 0
+            for b, evs in bars.items():
+                for (p, st, du, ps, v) in evs:
+                    if p is not part:
+                        continue
+                    for x in ps:
+                        y = x + shift
+                        cost += du * (100 if not (lo_r <= y <= hi_r) else
+                                      (1 if not (lo_c <= y <= hi_c) else 0))
+            if best is None or cost < best[0]:
+                best = (cost, shift)
+        shift = best[1]
+        if shift:
+            part["_shift"] = shift
+            for b in bars:
+                bars[b] = [(p, st, du, ([x + shift for x in ps] if p is part else ps), v)
+                           for (p, st, du, ps, v) in bars[b]]
     return bars
 
 
-# ---------- MIDI ----------
-
-def vlq(n):
-    out = [n & 0x7F]
-    n >>= 7
-    while n:
-        out.append((n & 0x7F) | 0x80)
-        n >>= 7
-    return bytes(reversed(out))
-
-
-def meta_text(text):
-    b = text.encode()
-    return b"\xff\x03" + vlq(len(b)) + b
-
-
-def track_chunk(events):
-    """events: list of (abs_tick, order, bytes)"""
-    events = sorted(events, key=lambda e: (e[0], e[1]))
-    data, last = b"", 0
-    for tick, _o, payload in events:
-        data += vlq(tick - last) + payload
-        last = tick
-    data += vlq(0) + b"\xff\x2f\x00"
-    return b"MTrk" + len(data).to_bytes(4, "big") + data
-
-
-def dynamics_map(spec):
-    total = len(spec["harmony"])
-    lvl = {}
-    for seg in spec.get("dynamics", []):
-        for b in parse_bars(seg["bars"], total):
-            lvl[b] = seg["level"]
-    return lvl
-
-
-def build_midi(spec, bars, melody=True):
-    meta = spec["meta"]
-    div = meta["division"]
-    grid = meta["grid"]
-    tps = div // (grid // meta["meter"][0])
-
-    conductor = []
-    tempo = int(60_000_000 / meta["tempo"])
-    conductor.append((0, 0, b"\xff\x51\x03" + tempo.to_bytes(3, "big")))
-    conductor.append((0, 1, b"\xff\x58\x04" + bytes([meta["meter"][0], 2, 24, 8])))
-    conductor.append((0, 2, meta_text(meta["title"])))
-    tracks = [track_chunk(conductor)]
-
-    for part in spec["parts"]:
-        if not melody and part.get("lead"):
-            tracks.append(track_chunk([(0, 0, meta_text("(omitted)"))]))
-            continue
-        ch = part["channel"]
-        evs = [(0, 0, meta_text(part["name"])),
-               (0, 1, bytes([0xC0 | ch, part["program"]]))]
-        lvl = dynamics_map(spec)
-        for bar in sorted(bars):
-            if bar in lvl:
-                evs.append(((bar - 1) * grid * tps, 1,
-                            bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
-            for (p, st, du, pitches, vel) in bars[bar]:
-                if p is not part:
-                    continue
-                t0 = (bar - 1) * grid * tps + st * tps
-                t1 = t0 + du * tps
-                for i, pitch in enumerate(pitches):
-                    evs.append((t0, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
-                    evs.append((t1, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
-        tracks.append(track_chunk(evs))
-
-    header = b"MThd" + (6).to_bytes(4, "big") + (1).to_bytes(2, "big") + len(tracks).to_bytes(2, "big") + div.to_bytes(2, "big")
-    return header + b"".join(tracks)
-
-
-# ---------- ASCII roll ----------
-
-def roll(spec, bars):
-    grid = spec["meta"]["grid"]
-    total = len(spec["harmony"])
-    names = [p["name"] for p in spec["parts"]]
-    print()
-    for start in range(1, total + 1, 4):
-        block = list(range(start, min(start + 4, total + 1)))
-        head = "".join(f"|{chord_at(spec['harmony'], b)['name']:<16}" for b in block) + "|"
-        print(f"  bar {block[0]:>2}-{block[-1]:<2}  {head}")
-        for name in names:
-            cells = []
-            for b in block:
-                line = ["."] * grid
-                for (p, st, du, pitches, vel) in bars.get(b, []):
-                    if p["name"] != name:
-                        continue
-                    for k in range(st, min(grid, st + du)):
-                        line[k] = "#" if k == st else "|"
-                cells.append("".join(line))
-            label = name[:9]
-            print(f"  {label:<10}" + " ".join(cells))
-        print()
-
-
-def presence(spec, bars):
-    print("  bar  chord        n  parts")
-    for b in range(1, len(spec["harmony"]) + 1):
-        names = sorted({p["name"] for (p, *_r) in bars.get(b, [])})
-        if not names:
-            continue
-        print(f"  {b:>3}  {chord_at(spec['harmony'], b)['name']:<12} {len(names)}  {', '.join(names)}")
-
+# ---------- 在场路径 ----------
 
 def apply_presence(spec, bars):
-    """在场路径是**声明**的，不是从各声部区间推出来的（spike 1 的缺口 #2）。"""
     ladder = spec.get("presence")
     if not ladder:
         return bars, []
@@ -300,82 +248,198 @@ def apply_presence(spec, bars):
     return out, sorted(set(issues))
 
 
-def check_harmony(spec, bars):
-    """弦内音的拼写自检：非和弦音的数量。（本可以早点有这个检查，
-    它能在第一秒抓住"和弦音按 C 为根算"这个 bug。）"""
+# ---------- 检查 ----------
+
+def check_harmony(spec, bars, parts):
     problems = []
+    skip = {p["id"] for p in parts if p.get("lead") or p.get("_doubling")}
     for b, evs in bars.items():
         h = chord_at(spec["harmony"], b)
-        allowed = {pc % 12 for pc in h["chord"]}
+        allowed = {pc % 12 for pc in h["chord"]} | {h["bass"] % 12}
         for (part, st, du, pitches, vel) in evs:
-            if part.get("drum") or part.get("lead") or part.get("_doubling"):
+            if part.get("drum") or part["id"] in skip:
                 continue
             for p in pitches:
                 if p % 12 not in allowed:
                     problems.append(
-                        f"bar {b} {part['name']}: {note_name(p)} 不属于 {h['name']} "
-                        f"({sorted(PITCH_NAMES[x] for x in allowed)})")
+                        f"bar {b} {part['name']}: {note_name(p)} 不属于 {h['name']}")
     return sorted(set(problems))
 
 
-def lint(spec, bars):
-    """最小可用 lint：音域越界 + 段落重叠。（这正是 C1 说的“编译器报错”。）"""
-    problems = []
-    ranges = {p["name"]: p.get("range") for p in spec["parts"]}
+def lint(bars, parts):
+    errors, warns = [], []
     for b in sorted(bars):
-        for (part, st, du, pitches, vel) in bars.get(b, []):
-            rng = part.get("range")
-            if not rng or part.get("drum"):
+        for (part, st, du, pitches, vel) in bars[b]:
+            if part.get("drum") or not part.get("range"):
                 continue
+            lo_r, hi_r = part["range"]
+            lo_c, hi_c = part.get("comfort") or (lo_r, hi_r)
             for p in pitches:
-                if p < rng[0] or p > rng[1]:
-                    problems.append(
-                        f"bar {b} {part['name']}: {note_name(p)} ({p}) "
-                        f"超出实用音域 {note_name(rng[0])}–{note_name(rng[1])}")
-    # 段落重叠（同一 part 被两个 segment 同时覆盖）
-    for part in spec["parts"]:
+                if not (lo_r <= p <= hi_r):
+                    errors.append(f"bar {b} {part['name']}: {note_name(p)} 超出可演奏音域 "
+                                  f"{note_name(lo_r)}–{note_name(hi_r)}")
+                elif not (lo_c <= p <= hi_c):
+                    warns.append(f"bar {b} {part['name']}: {note_name(p)} 超出舒适区 "
+                                 f"{note_name(lo_c)}–{note_name(hi_c)}")
+    for part in parts:
         seen = {}
         for seg in part["segments"]:
-            for b in parse_bars(seg["bars"], len(spec["harmony"])):
+            for b in parse_bars(seg["bars"], max(bars) or 1):
                 if b in seen and not (seen[b].get("rest") and seg.get("rest")):
-                    problems.append(f"bar {b} {part['name']}: 段落重叠（"
-                                    f"{seen[b].get('bars')} 与 {seg.get('bars')}）")
+                    errors.append(f"bar {b} {part['name']}: 段落重叠"
+                                  f"（{seen[b].get('bars')} 与 {seg.get('bars')}）")
                 seen[b] = seg
-    spelling = check_harmony(spec, bars)
-    print("\n  和声拼写自检:")
-    if not spelling:
-        print("    (clean)")
-    for m in spelling[:20]:
-        print("    - " + m)
+    return sorted(set(errors)), sorted(set(warns))
 
-    print("\n  lint:")
-    if not problems:
-        print("    (clean)")
-    for p in problems:
-        print("    - " + p)
-    return problems
+
+# ---------- MIDI ----------
+
+def vlq(n):
+    out = [n & 0x7F]
+    n >>= 7
+    while n:
+        out.append((n & 0x7F) | 0x80)
+        n >>= 7
+    return bytes(reversed(out))
+
+
+def meta_text(text):
+    b = text.encode()
+    return b"\xff\x03" + vlq(len(b)) + b
+
+
+def track_chunk(events):
+    events = sorted(events, key=lambda e: (e[0], e[1]))
+    data, last = b"", 0
+    for tick, _o, payload in events:
+        data += vlq(tick - last) + payload
+        last = tick
+    data += vlq(0) + b"\xff\x2f\x00"
+    return b"MTrk" + len(data).to_bytes(4, "big") + data
+
+
+def dynamics_map(spec):
+    lvl = {}
+    for seg in spec.get("dynamics", []):
+        for b in parse_bars(seg["bars"], len(spec["harmony"])):
+            lvl[b] = seg["level"]
+    return lvl
+
+
+def build_midi(spec, bars, parts, melody=True):
+    meta = spec["meta"]
+    div, grid = meta["division"], meta["grid"]
+    tps = div // (grid // meta["meter"][0])
+
+    conductor = [(0, 0, b"\xff\x51\x03" + int(60_000_000 / meta["tempo"]).to_bytes(3, "big")),
+                 (0, 1, b"\xff\x58\x04" + bytes([meta["meter"][0], 2, 24, 8])),
+                 (0, 2, meta_text(meta["title"]))]
+    tracks = [track_chunk(conductor)]
+    lvl = dynamics_map(spec)
+
+    for part in parts:
+        if not melody and part.get("lead"):
+            tracks.append(track_chunk([(0, 0, meta_text("(omitted)"))]))
+            continue
+        ch = part["channel"]
+        evs = [(0, 0, meta_text(part["name"])), (0, 1, bytes([0xC0 | ch, part["gm_program"]]))]
+        for bar in sorted(bars):
+            if bar in lvl:
+                evs.append(((bar - 1) * grid * tps, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
+            for (p, st, du, pitches, vel) in bars[bar]:
+                if p is not part:
+                    continue
+                t0 = (bar - 1) * grid * tps + st * tps
+                t1 = t0 + du * tps
+                for i, pitch in enumerate(pitches):
+                    evs.append((t0, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
+                    evs.append((t1, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
+        tracks.append(track_chunk(evs))
+
+    header = (b"MThd" + (6).to_bytes(4, "big") + (1).to_bytes(2, "big")
+              + len(tracks).to_bytes(2, "big") + div.to_bytes(2, "big"))
+    return header + b"".join(tracks)
+
+
+# ---------- 输出 ----------
+
+def roll(spec, bars, parts):
+    grid = spec["meta"]["grid"]
+    total = len(spec["harmony"])
+    print()
+    for start in range(1, total + 1, 4):
+        block = list(range(start, min(start + 4, total + 1)))
+        head = "".join(f"|{chord_at(spec['harmony'], b)['name']:<16}" for b in block) + "|"
+        print(f"  bar {block[0]:>2}-{block[-1]:<2}  {head}")
+        for part in parts:
+            cells = []
+            for b in block:
+                line = ["."] * grid
+                for (p, st, du, pitches, vel) in bars.get(b, []):
+                    if p is not part:
+                        continue
+                    for k in range(st, min(grid, st + du)):
+                        line[k] = "#" if k == st else "|"
+                cells.append("".join(line))
+            print(f"  {part['name'][:9]:<10}" + " ".join(cells))
+        print()
+
+
+def presence(spec, bars, parts):
+    print("  bar  chord        n")
+    for b in range(1, len(spec["harmony"]) + 1):
+        names = sorted({p["name"] for (p, *_r) in bars.get(b, [])})
+        print(f"  {b:>3}  {chord_at(spec['harmony'], b)['name']:<12} {len(names)}  {', '.join(names)}")
 
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "spikes/01/farewell-v3.yaml"
+    path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
     spec = yaml.safe_load(open(path))
-    bars, presence_issues = apply_presence(spec, expand(spec))
+    ens, insts = load_ensemble(spec, path)
+
+    bars, parts = expand(spec, insts)
+    bars = autoplace(bars, parts, spec["meta"]["grid"])
+    bars, pis = apply_presence(spec, bars)
 
     out = path.rsplit(".", 1)[0]
-    midi = build_midi(spec, bars, melody=True)
-    open(out + ".mid", "wb").write(midi)
-    midi2 = build_midi(spec, bars, melody=False)
-    open(out + "-nomelody.mid", "wb").write(midi2)
+    for name, with_mel in ((out + ".mid", True), (out + "-nomelody.mid", False)):
+        m = build_midi(spec, bars, parts, melody=with_mel)
+        open(name, "wb").write(m)
+        print(f"wrote {name}  ({len(m)} bytes)")
 
-    print(f"wrote {out}.mid  ({len(midi)} bytes)")
-    print(f"wrote {out}-nomelody.mid  ({len(midi2)} bytes)")
-    if presence_issues:
+    print(f"\n  编制: {ens.get('name','')}  座位 {len(parts)}")
+    for p in parts:
+        flag = "  ← 待确认" if p["seat"].get("confirm") else ""
+        sh = f"  自动择位 {p['_shift']:+d}" if p.get("_shift") else ""
+        print(f"    ch{(p['channel'] if p['channel'] < 9 else p['channel']+1):>2} "
+              f"#{p['gm_program']:<3} {p['name']:<16} "
+              f"音域 {note_name(p['range'][0]) if p.get('range') else '—'}"
+              f"–{note_name(p['range'][1]) if p.get('range') else '—'}  "
+              f"舒适 {note_name(p['comfort'][0]) if p.get('comfort') else '—'}"
+              f"–{note_name(p['comfort'][1]) if p.get('comfort') else '—'}{sh}{flag}")
+
+    if pis:
         print("\n  在场路径检查:")
-        for m in presence_issues:
+        for m in pis:
             print("    - " + m)
-    roll(spec, bars)
-    presence(spec, bars)
-    lint(spec, bars)
+    spelling = check_harmony(spec, bars, parts)
+    print("\n  和声拼写自检:")
+    print("    (clean)" if not spelling else "")
+    for m in spelling[:20]:
+        print("    - " + m)
+    errors, warns = lint(bars, parts)
+    print("\n  lint:")
+    for m in errors:
+        print("    ✗ " + m)
+    for m in warns[:15]:
+        print("    ! " + m)
+    if not errors and not warns:
+        print("    (clean)")
+    elif not errors:
+        print(f"    （{len(warns)} 条提示，无错误）")
+
+    roll(spec, bars, parts)
+    presence(spec, bars, parts)
 
 
 if __name__ == "__main__":

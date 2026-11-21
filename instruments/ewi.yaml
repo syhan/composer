@@ -1,0 +1,14 @@
+id: ewi
+name: EWI
+family: wind-synth
+gm_program: 62       # Synth Brass（音色必须显式指定）
+polyphonic: false
+staves: 1
+range:   [48, 96]    # C3–C7
+comfort: [55, 84]
+roles: [lead, counter, pad]
+idioms:
+  monophonic: true
+  breath: true
+  timbre_must_be_declared: true
+  notes: "可换音色；连奏与换气；宽音域但高区薄"

@@ -1,0 +1,12 @@
+id: electric-bass
+name: Electric Bass
+family: bass
+gm_program: 33
+polyphonic: false
+staves: 1
+range:   [28, 55]    # E1–G3  四弦
+comfort: [28, 50]    # E1–D3
+roles: [root, drive]
+idioms:
+  monophonic: true
+  notes: "与 kick 的时值关系是一等概念；指法跨度优先"

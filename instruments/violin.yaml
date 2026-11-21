@@ -1,0 +1,13 @@
+id: violin
+name: Violin
+family: strings
+gm_program: 40
+polyphonic: true
+staves: 1
+range:   [55, 100]   # G3–E7   绝对可演奏
+comfort: [55, 91]    # G3–G6  空弦到第五把位，最像话的区间
+roles: [lead, counter]
+idioms:
+  max_simultaneous: 2
+  breath: false
+  notes: "双音可行；三音以上基本不可行；长音要分配弓段"

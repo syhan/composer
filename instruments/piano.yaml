@@ -1,0 +1,12 @@
+id: piano
+name: Piano
+family: keyboard
+gm_program: 0
+polyphonic: true
+staves: 2            # 大谱表：记谱要两行，事件层不区分手
+range:   [21, 108]   # A0–C8
+comfort: [36, 96]    # C2–C8
+roles: [comp, arp, pad, lead]
+idioms:
+  max_span: 10         # 手跨度约十度
+  notes: "左手低音 + 右手和弦是默认分工；低音区与贝斯抢位置"

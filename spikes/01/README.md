@@ -1,5 +1,18 @@
 # spike 1｜spec → 可听 + 可量
 
+## 结构（编制是输入）
+
+```
+instruments/*.yaml      一件乐器：gm_program / range / comfort / roles / idioms / drum_map
+ensembles/band.yaml     这套编制：有哪些座位、谁有 overrides
+farewell-v3.yaml        曲子：ensemble 引用 + 和声 + 在场路径 + 动态 + 各声部段
+render.py               spec → MIDI + 卷帘 + lint
+```
+
+改编制只改 `ensembles/`，不碰代码。音区三层：`range`（越界=错误）/ `comfort`（越界=提示）/ 座位 `overrides`（优先）。
+`place: auto` 会自己挑一个八度，让材料尽量待在舒适区里。
+
+
 零依赖（numpy / PyYAML），全流程 < 1 秒，不需要 MuseScore / DAW / 网络。
 
 ```bash

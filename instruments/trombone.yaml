@@ -1,0 +1,13 @@
+id: trombone
+name: Trombone
+family: brass
+gm_program: 57
+polyphonic: false
+staves: 1
+range:   [36, 70]    # C2（F 键）–Bb4
+comfort: [46, 65]    # Bb2–F4
+roles: [counter, pad, fanfare]
+idioms:
+  monophonic: true
+  breath: strict          # 连续演奏必须留换气口
+  notes: "滑音是特色；大跳后要留时间；高音区撑不久"

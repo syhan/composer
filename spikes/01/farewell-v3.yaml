@@ -1,65 +1,58 @@
-# 真实简谱（用户提供，20 小节 = 5 句 × 4 小节）
-#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1 ---- |
-#   5 3 5 1' - | 6 1' 5 | 5 1 2 3 2 1 | 2 - |
-#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1 |
-#   6 1' 1' | 7 6 7 1' | 6 7 1' 6 6 5 3 1 | 2 |
-#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1
+# 编制从 ensembles/band.yaml 读入（C1：编制是输入，不是硬约束）
 #
-# 编排结构：4 小节引子 + 20 小节本歌 = 24 小节
-#   编排 bar 5-24  ←→  旋律 bar 1-20
+# 真实简谱（20 小节 = 5 句 × 4 小节）+ 4 小节引子 = 24 小节
+#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1 ----
+#   5 3 5 1' - | 6 1' 5 | 5 1 2 3 2 1 | 2 -
+#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1
+#   6 1' 1' | 7 6 7 1' | 6 7 1' 6 6 5 3 1 | 2
+#   5 3 5 1' 7 | 6 1' 5 | 5 2 3 4 7, | 1
+
+ensemble: ../../ensembles/band.yaml
 
 meta:
   title: "送别 / 史诗进行曲"
-  version: v4
+  version: v5
   tempo: 112
   division: 480
   grid: 16
   meter: [4, 4]
 
 harmony:
-  # --- 引子：主持续 → bVI–bVII（门开一条缝）---
   - {bar: 1,  name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 2,  name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 3,  name: Ab,  chord: [8, 0, 3],   bass: 8}
   - {bar: 4,  name: Bb,  chord: [10, 2, 5],  bass: 10}
-  # --- 句 1（长亭外…碧连天）---
   - {bar: 5,  name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 6,  name: Am,  chord: [9, 0, 4],   bass: 9}
   - {bar: 7,  name: G,   chord: [7, 11, 14], bass: 7}
   - {bar: 8,  name: C,   chord: [0, 4, 7],   bass: 0}
-  # --- 句 2（晚风拂柳…山外山）---
   - {bar: 9,  name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 10, name: Am,  chord: [9, 0, 4],   bass: 9}
   - {bar: 11, name: F,   chord: [5, 9, 0],   bass: 5}
-  - {bar: 12, name: G,   chord: [7, 11, 14], bass: 7}   # 半终止（悬）
-  # --- 句 3（天之涯…半零落）---
+  - {bar: 12, name: G,   chord: [7, 11, 14], bass: 7}
   - {bar: 13, name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 14, name: Am,  chord: [9, 0, 4],   bass: 9}
   - {bar: 15, name: G,   chord: [7, 11, 14], bass: 7}
   - {bar: 16, name: C,   chord: [0, 4, 7],   bass: 0}
-  # --- 句 4（一壶浊酒…今宵别梦寒）---
   - {bar: 17, name: Am,  chord: [9, 0, 4],   bass: 9}
   - {bar: 18, name: G,   chord: [7, 11, 14], bass: 7}
   - {bar: 19, name: Am,  chord: [9, 0, 4],   bass: 9}
-  - {bar: 20, name: G,   chord: [7, 11, 14], bass: 7}   # 又一次悬置
-  # --- 句 5（主题回来）---
+  - {bar: 20, name: G,   chord: [7, 11, 14], bass: 7}
   - {bar: 21, name: C,   chord: [0, 4, 7],   bass: 0}
   - {bar: 22, name: Am,  chord: [9, 0, 4],   bass: 9}
   - {bar: 23, name: G,   chord: [7, 11, 14], bass: 7}
-  - {bar: 24, name: C5,  chord: [0, 7],      bass: 0}   # 去掉三音：到了，但没定
+  - {bar: 24, name: C5,  chord: [0, 7],      bass: 0}
 
-# 在场路径（声明式）。空集合法。
 presence:
-  - {bars: "1-2",   parts: [Drums]}
-  - {bars: "3-4",   parts: [Drums, Trombone]}                     # 引子需要有人说和声，否则 Ab/Bb 听不见
-  - {bars: "5-8",   parts: [Drums, Bass, Trombone, Violin]}
-  - {bars: "9-12",  parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar]}
-  - {bars: "13-16", parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar]}
-  - {bars: "17-22", parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar, EWI]}
-  - {bars: "23",    parts: [Drums, Bass, Violin]}                 # 拆人
-  - {bars: "24",    parts: [Drums, Bass, Trombone, Violin, Acoustic Guitar, Electric Guitar, EWI]}
+  - {bars: "1-2",   parts: [Drum Kit]}
+  - {bars: "3-4",   parts: [Drum Kit, Trombone, Piano]}
+  - {bars: "5-8",   parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin]}
+  - {bars: "9-12",  parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar]}
+  - {bars: "13-16", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar]}
+  - {bars: "17-22", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar, EWI]}
+  - {bars: "23",    parts: [Drum Kit, Electric Bass, Violin]}
+  - {bars: "24",    parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar, EWI]}
 
-# 动态（CC7）。velocity 做不出段落级强弱，靠这个。
 dynamics:
   - {bars: "1-2",   level: 0.24}
   - {bars: "3-4",   level: 0.34}
@@ -72,10 +65,7 @@ dynamics:
   - {bars: "24",    level: 1.00}
 
 parts:
-  - name: Drums
-    program: 0
-    channel: 9
-    drum: true
+  - instrument: drum-kit
     segments:
       - {bars: "1",    pattern: {pitch: snare, rhythm: "x---x---x---x---"}, velocity: 58}
       - {bars: "2",    pattern: {pitch: snare, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 64}
@@ -100,11 +90,8 @@ parts:
       - {bars: "24",   pattern: {pitch: crash, rhythm: "x---------------"}, velocity: 120,
                         also: {pitch: kick, rhythm: "x---------------"}}
 
-  - name: Bass
-    program: 33
-    channel: 1
+  - instrument: electric-bass
     base_octave: 2
-    range: [28, 57]
     segments:
       - {bars: "1-4",  rest: true}
       - {bars: "5-8",  pattern: {pitch: root, rhythm: "x-------x-------"}, velocity: 72}
@@ -114,11 +101,9 @@ parts:
       - {bars: "24",   pattern: {pitch: root, rhythm: "x---------------"}, velocity: 118,
                        also: {pitch: octave, rhythm: "x---------------"}}
 
-  - name: Trombone
-    program: 57
-    channel: 2
+  - instrument: trombone
     base_octave: 3
-    range: [40, 70]
+    place: auto
     segments:
       - {bars: "1-2",  rest: true}
       - {bars: "3-16", pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 66}
@@ -127,11 +112,17 @@ parts:
       - {bars: "24",   pattern: {pitch: root, rhythm: "x---------------"}, velocity: 118,
                        also: {pitch: fifth, rhythm: "x---------------"}}
 
-  - name: Acoustic Guitar
-    program: 25
-    channel: 3
+  - instrument: piano
     base_octave: 4
-    range: [40, 88]
+    segments:
+      - {bars: "1-2",  rest: true}
+      - {bars: "3-16", pattern: {pitch: wide, rhythm: "x-------x-------"}, velocity: 70}
+      - {bars: "17-22",pattern: {pitch: wide, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "23",   rest: true}
+      - {bars: "24",   pattern: {pitch: wide, rhythm: "x---------------"}, velocity: 110}
+
+  - instrument: acoustic-guitar
+    base_octave: 4
     segments:
       - {bars: "1-8",  rest: true}
       - {bars: "9-16", pattern: {pitch: arp,   rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 62}
@@ -139,11 +130,8 @@ parts:
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: chord, rhythm: "x---------------"}, velocity: 104}
 
-  - name: Electric Guitar
-    program: 30
-    channel: 4
+  - instrument: electric-guitar
     base_octave: 3
-    range: [40, 88]
     segments:
       - {bars: "1-12", rest: true}
       - {bars: "13-16",pattern: {pitch: power, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 58}
@@ -151,47 +139,36 @@ parts:
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: power, rhythm: "x---------------"}, velocity: 112}
 
-  - name: EWI
-    program: 62
-    channel: 5
+  - instrument: ewi
     base_octave: 4
-    range: [48, 91]
     segments:
       - {bars: "1-16", rest: true}
-      - {bars: "17-22",melody_of: Violin, unison: 0}
+      - {bars: "17-22",melody_of: violin, unison: 0}
       - {bars: "23",   rest: true}
-      - {bars: "24",   melody_of: Violin, unison: 0}
+      - {bars: "24",   melody_of: violin, unison: 0}
 
-  - name: Violin
-    program: 40
-    channel: 6
+  - instrument: violin
     base_octave: 4
-    range: [55, 96]
     lead: true
     segments:
       - {bars: "1-4", rest: true}
-      # --- 句 1 ---
-      - {bars: "5",   degrees: "5:4 3:4 5:2 8:2 7:4"}      # 5 3 5 1' 7
-      - {bars: "6",   degrees: "6:4 8:4 5:8"}               # 6 1' 5
-      - {bars: "7",   degrees: "5:4 2:4 3:2 4:2 7,:4"}      # 5 2 3 4 7,
-      - {bars: "8",   degrees: "1:16"}                      # 1 ----
-      # --- 句 2 ---
-      - {bars: "9",   degrees: "5:4 3:4 5:4 8:4"}           # 5 3 5 1' -
+      - {bars: "5",   degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "6",   degrees: "6:4 8:4 5:8"}
+      - {bars: "7",   degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "8",   degrees: "1:16"}
+      - {bars: "9",   degrees: "5:4 3:4 5:4 8:4"}
       - {bars: "10",  degrees: "6:4 8:4 5:8"}
-      - {bars: "11",  degrees: "5:4 1:2 2:2 3:2 2:2 1:4"}   # 5 1 2 3 2 1
-      - {bars: "12",  degrees: "2:8"}                        # 2 -
-      # --- 句 3 ---
+      - {bars: "11",  degrees: "5:4 1:2 2:2 3:2 2:2 1:4"}
+      - {bars: "12",  degrees: "2:8"}
       - {bars: "13",  degrees: "5:4 3:4 5:2 8:2 7:4"}
       - {bars: "14",  degrees: "6:4 8:4 5:8"}
       - {bars: "15",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
       - {bars: "16",  degrees: "1:16"}
-      # --- 句 4 ---
-      - {bars: "17",  degrees: "6:8 8:4 8:4"}               # 6 1' 1'
-      - {bars: "18",  degrees: "7:4 6:4 7:4 8:4"}           # 7 6 7 1'
+      - {bars: "17",  degrees: "6:8 8:4 8:4"}
+      - {bars: "18",  degrees: "7:4 6:4 7:4 8:4"}
       - {bars: "19",  degrees: "6:2 7:2 8:2 6:2 6:2 5:2 3:2 1:2"}
       - {bars: "20",  degrees: "2:16"}
-      # --- 句 5（主题回来，全员）---
       - {bars: "21",  degrees: "5:4 3:4 5:2 8:2 7:4"}
       - {bars: "22",  degrees: "6:4 8:4 5:8"}
-      - {bars: "23",  degrees: "5:4 2:4 3:2 4:2 7,:4"}      # 拆人：只剩小提琴与贝斯、军鼓
-      - {bars: "24",  degrees: "1:16"}                      # 最后一击，落 C 空五度
+      - {bars: "23",  degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "24",  degrees: "1:16"}

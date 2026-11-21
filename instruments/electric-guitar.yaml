@@ -1,0 +1,13 @@
+id: electric-guitar
+name: Electric Guitar
+family: plucked
+gm_program: 30       # Distortion Guitar
+polyphonic: true
+staves: 1
+range:   [40, 88]
+comfort: [40, 84]
+roles: [comp, riff, lead]
+idioms:
+  power_chords: true
+  parallel_fifths: ok   # 失真吉他的平行五度是风格，不是错误
+  notes: "清音/失真/闷音必须显式声明；三度叠置在失真下会糊"

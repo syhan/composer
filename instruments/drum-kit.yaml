@@ -1,0 +1,19 @@
+id: drum-kit
+name: Drum Kit
+family: percussion
+gm_program: 0
+drum: true
+polyphonic: true
+staves: 1
+range: null
+comfort: null
+roles: [rhythm]
+drum_map:
+  kick: 36
+  snare: 38
+  hh: 42
+  ohh: 46
+  crash: 49
+  ride: 51
+  tom: 45
+  floor: 43
