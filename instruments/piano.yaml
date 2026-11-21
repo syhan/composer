@@ -6,6 +6,8 @@ polyphonic: true
 staves: 2            # 大谱表：记谱要两行，事件层不区分手
 range:   [21, 108]   # A0–C8
 comfort: [36, 96]    # C2–C8
+# 体力默认值（乐器级的推荐，座位可覆盖）
+stamina: {max_continuous_beats: 240, rest_beats: 1}
 roles: [comp, arp, pad, lead]
 idioms:
   max_span: 10         # 手跨度约十度

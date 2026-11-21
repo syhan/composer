@@ -1,28 +1,31 @@
 # 编制 = 输入参数，不是代码里的常量（C1）
-#
-# 改这里就能换编制：加人、减人、换乐器、给某个座位覆盖音区。
-# 座位上的 `overrides` 优先于 instruments/*.yaml 里的"推荐值"——
-# 推荐是系统给的，最终由演奏者说了算（P10）。
+# 座位可以起别名（as:），同一件乐器可以坐两个人（节奏吉他 / 主音吉他）。
 
 id: band
 name: 待确认
 
-# 通道按此顺序自动分配（跳过 9，留给鼓）
 seats:
   - {instrument: drum-kit}
   - {instrument: electric-bass}
 
-  # 演奏者覆盖的示范：这位长号手说 Ab2 也没问题（推荐值是 Bb2 起）
+  # 演奏者覆盖：这位长号手说 Ab2 也没问题（推荐值是 Bb2 起）
   - instrument: trombone
     overrides:
       comfort: [44, 65]
 
+  - {instrument: piano}
   - {instrument: acoustic-guitar}
-  - {instrument: electric-guitar}
+
+  # 同一件乐器，两个座位，两种功能
+  - instrument: electric-guitar
+    as: rhythm-guitar
+    name: Rhythm Guitar
+    overrides: {gm_program: 30}          # Distortion
+
+  - instrument: electric-guitar
+    as: lead-guitar
+    name: Lead Guitar
+    overrides: {gm_program: 29}          # Overdriven
+
   - {instrument: ewi}
   - {instrument: violin}
-
-  # ⚠️ 钢琴：你最早列的七件里没有它，旧的 MSCX 模板里有。
-  #    先放进来但标为待确认 —— 要不要它是你的决定，不是我的。
-  - instrument: piano
-    confirm: true

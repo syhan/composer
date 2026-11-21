@@ -48,10 +48,10 @@ presence:
   - {bars: "3-4",   parts: [Drum Kit, Trombone, Piano]}
   - {bars: "5-8",   parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin]}
   - {bars: "9-12",  parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar]}
-  - {bars: "13-16", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar]}
-  - {bars: "17-22", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar, EWI]}
+  - {bars: "13-16", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Rhythm Guitar]}
+  - {bars: "17-22", parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Rhythm Guitar, Lead Guitar, EWI]}
   - {bars: "23",    parts: [Drum Kit, Electric Bass, Violin]}
-  - {bars: "24",    parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Electric Guitar, EWI]}
+  - {bars: "24",    parts: [Drum Kit, Electric Bass, Trombone, Piano, Violin, Acoustic Guitar, Rhythm Guitar, Lead Guitar, EWI]}
 
 dynamics:
   - {bars: "1-2",   level: 0.24}
@@ -130,7 +130,7 @@ parts:
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: chord, rhythm: "x---------------"}, velocity: 104}
 
-  - instrument: electric-guitar
+  - instrument: rhythm-guitar
     base_octave: 3
     segments:
       - {bars: "1-12", rest: true}
@@ -138,6 +138,14 @@ parts:
       - {bars: "17-22",pattern: {pitch: power, rhythm: "x---------------"}, velocity: 100}
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: power, rhythm: "x---------------"}, velocity: 112}
+
+  - instrument: lead-guitar
+    base_octave: 3
+    segments:
+      - {bars: "1-16", rest: true}
+      - {bars: "17-22",melody_of: violin, unison: -12}   # 主题低八度加倍：C12 要的是齐奏
+      - {bars: "23",   rest: true}
+      - {bars: "24",   melody_of: violin, unison: -12}
 
   - instrument: ewi
     base_octave: 4

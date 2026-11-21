@@ -6,6 +6,8 @@ polyphonic: true
 staves: 1
 range:   [55, 100]   # G3–E7   绝对可演奏
 comfort: [55, 91]    # G3–G6  空弦到第五把位，最像话的区间
+# 体力默认值（乐器级的推荐，座位可覆盖）
+stamina: {max_continuous_beats: 120, rest_beats: 1}
 roles: [lead, counter]
 idioms:
   max_simultaneous: 2

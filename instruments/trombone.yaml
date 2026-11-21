@@ -6,6 +6,8 @@ polyphonic: false
 staves: 1
 range:   [36, 70]    # C2（F 键）–Bb4
 comfort: [46, 65]    # Bb2–F4
+# 体力默认值（乐器级的推荐，座位可覆盖）
+stamina: {max_continuous_beats: 8, rest_beats: 2}
 roles: [counter, pad, fanfare]
 idioms:
   monophonic: true

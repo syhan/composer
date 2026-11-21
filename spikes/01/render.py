@@ -23,11 +23,17 @@ def load_ensemble(spec, spec_path):
     ens = yaml.safe_load(open(ens_path))
     inst_dir = os.path.join(os.path.dirname(ens_path), "..", "instruments")
 
-    insts, ch = {}, 0
+    insts, ch, dup = {}, 0, []
     for seat in ens["seats"]:
-        iid = seat["instrument"]
-        d = dict(yaml.safe_load(open(os.path.join(inst_dir, iid + ".yaml"))))
+        base = seat["instrument"]
+        d = dict(yaml.safe_load(open(os.path.join(inst_dir, base + ".yaml"))))
         d.update(seat.get("overrides") or {})
+        inst = seat.get("as") or base          # 座位可起别名：同一乐器坐两个人
+        if inst in insts:
+            dup.append(inst)
+        d["id"] = inst
+        d["name"] = seat.get("name") or d["name"]
+        d["base"] = base
         if d.get("drum"):
             d["channel"] = 9
         else:
@@ -35,7 +41,9 @@ def load_ensemble(spec, spec_path):
             d["channel"] = ch
             ch += 1
         d["seat"] = seat
-        insts[iid] = d
+        insts[inst] = d
+    if dup:
+        raise SystemExit(f"座位 id 重複（必须唯一）: {sorted(set(dup))}")
     return ens, insts
 
 
@@ -292,6 +300,65 @@ def lint(bars, parts):
     return sorted(set(errors)), sorted(set(warns))
 
 
+# ---------- 演奏可行性（把 override 变成可量化的东西）----------
+
+def report(bars, parts, grid=16):
+    """每条都是可量的：舒适区时长占比、最长连续、大跳、最高音。"""
+    steps_per_beat = grid / 4
+    rows = []
+    for part in parts:
+        evs = [(b, st, du, ps) for b in sorted(bars)
+               for (p, st, du, ps, v) in bars[b] if p is part]
+        if not evs or part.get("drum"):
+            continue
+        iv = sorted(((b - 1) * grid + st, (b - 1) * grid + st + du, ps) for b, st, du, ps in evs)
+        # 合并重叠 -> 连续演奏段
+        runs, cur = [], None
+        for a, z, ps in iv:
+            if cur and a <= cur[1]:
+                cur[1] = max(cur[1], z)
+                cur[2].extend(ps)
+            else:
+                if cur:
+                    runs.append(cur)
+                cur = [a, z, list(ps)]
+        if cur:
+            runs.append(cur)
+        longest = max((z - a) for a, z, _ in runs) / steps_per_beat if runs else 0
+        total = sum(z - a for a, z, _ in runs) / steps_per_beat
+
+        lo_r, hi_r = part["range"]
+        lo_c, hi_c = part.get("comfort") or (lo_r, hi_r)
+        out_c = sum((z - a) for a, z, ps in runs
+                    if any(not (lo_c <= x <= hi_c) for x in ps)) / steps_per_beat
+        out_r = sum((z - a) for a, z, ps in runs
+                    if any(not (lo_r <= x <= hi_r) for x in ps)) / steps_per_beat
+
+        leaps, top = 0, None
+        if part.get("monophonic"):
+            seq = [ps[0] for _b, _s, _d, ps in evs]
+            leaps = sum(1 for x, y in zip(seq, seq[1:]) if abs(y - x) > 7)
+        top = max((x for *_r, ps in evs for x in ps), default=None)
+
+        cap = (part.get("stamina") or {}).get("max_continuous_beats")
+        rows.append({
+            "name": part["name"], "total": total, "longest": longest, "cap": cap,
+            "over": longest > cap if cap else False,
+            "comfort": 100 * (1 - out_c / total) if total else 100,
+            "range_bad": out_r,
+            "leaps": leaps, "top": note_name(top) if top is not None else "—",
+        })
+    if not rows:
+        return
+    print("\n  演奏可行性（每一条都是量的，不是形容词）:")
+    print(f"    {'声部':<16}{'发声':>6}{'连续/上限':>12}{'舒适区':>8}{'越域':>7}{'大跳':>6}{'最高':>7}")
+    for r in rows:
+        cap = f"{r['longest']:.0f}/{r['cap']:.0f}" if r["cap"] else f"{r['longest']:.0f}/—"
+        flag = " ✗" if r["over"] else (" !" if r["comfort"] < 90 else "")
+        print(f"    {r['name'][:15]:<16}{r['total']:>5.0f}b{cap:>12}"
+              f"{r['comfort']:>7.0f}%{r['range_bad']:>6.0f}b{r['leaps']:>6}{r['top']:>7}{flag}")
+
+
 # ---------- MIDI ----------
 
 def vlq(n):
@@ -438,6 +505,7 @@ def main():
     elif not errors:
         print(f"    （{len(warns)} 条提示，无错误）")
 
+    report(bars, parts, spec["meta"]["grid"])
     roll(spec, bars, parts)
     presence(spec, bars, parts)
 

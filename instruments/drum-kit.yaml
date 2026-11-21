@@ -7,6 +7,8 @@ polyphonic: true
 staves: 1
 range: null
 comfort: null
+# 体力默认值（乐器级的推荐，座位可覆盖）
+stamina: {max_continuous_beats: 240, rest_beats: 1}
 roles: [rhythm]
 drum_map:
   kick: 36
