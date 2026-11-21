@@ -3,7 +3,9 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# 生成物（一条命令即可重建，见 spikes/01/README.md）
-*.mid
-*.wav
-*.mp3
+# 工作渲染（一条命令即可重建，见 spikes/01/README.md）
+/spikes/**/*.mid
+/spikes/**/*.wav
+/spikes/**/*.mp3
+
+# 例外：samples/ 下是"被接受的版本"，要进仓库

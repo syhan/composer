@@ -10,13 +10,14 @@ import numpy as np
 import yaml
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from render import expand, parse_bars
+from render import expand, apply_presence, load_ensemble
 
 SR = 44100
 KIND = {
-    "Drums": "drums", "Bass": "bass", "Trombone": "brass", "Violin": "strings",
-    "Acoustic Guitar": "pluck", "Electric Guitar": "dist", "EWI": "reed",
+    "percussion": "drums", "bass": "bass", "brass": "brass", "strings": "strings",
+    "plucked": "pluck", "wind-synth": "reed", "keyboard": "pluck",
 }
+KIND_BY_ID = {"rhythm-guitar": "dist", "lead-guitar": "dist"}
 
 
 def env_adsr(n, a=0.01, d=0.05, s=0.75, r=0.08):
@@ -81,7 +82,11 @@ def drum(kind_pitch, vel):
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "spikes/01/farewell-v3.yaml"
     spec = yaml.safe_load(open(path))
-    bars = expand(spec)
+    ens, insts = load_ensemble(spec, path)
+    bars, parts = expand(spec, insts)
+    bars, _ = apply_presence(spec, bars)
+    kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck"))
+               for p in parts}
     tempo, grid = spec["meta"]["tempo"], spec["meta"]["grid"]
     total_bars = len(spec["harmony"])
     step = (60.0 / tempo) / (grid / spec["meta"]["meter"][0])
@@ -92,7 +97,7 @@ def main():
     for b in sorted(bars):
         for (part, st, du, pitches, vel) in bars[b]:
             t0 = int(((b - 1) * grid + st) * step * SR)
-            kind = KIND.get(part["name"], "pluck")
+            kind = kind_of.get(part["id"], "pluck")
             if part.get("drum"):
                 for p in pitches:
                     seg = drum(p, vel)
