@@ -95,13 +95,11 @@ material:
       - {bars: "24",  degrees: "1:16"}
 
   # 八度叠置 = 另一条素材实例（不是给 carries 加参数）。
-  # derived_from 是给 fidelity 追溯用的：位移 -12，纯音区（tonal: false）。
+  # 位移一律写成显式算子：纯音区 −12 半音。
   - id: melody_low
-    derived_from: melody
-    register: 3
     timeline:
-      - {bars: "17-22", use: melody}
-      - {bars: "24",    use: melody}
+      - {bars: "17-22", use: melody, op: [{octave: -1}]}
+      - {bars: "24",    use: melody, op: [{octave: -1}]}
 
 parts:
   - instrument: drum-kit

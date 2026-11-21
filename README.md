@@ -349,7 +349,7 @@ parts:
 三条由此落定的规则：
 
 - **同度齐奏 = 多个声部承载同一条轨。** 素材只有一份，不会不一致。
-- **八度叠置 = 多条素材实例**（`derived_from` 指向原轨），不是给 `carries` 加参数。
+- **八度叠置 = 多条素材实例**（`use` + `op` 指回原轨），不是给 `carries` 加参数。
 - **自由音符也是轨**（`source: null`），不是特殊路径。于是"骨架 / 派生 / 外料 / 自由"是同一结构的四种来源类型。
 
 #### pin 写在骨架节点上
@@ -370,7 +370,7 @@ pin 不是 boolean，是骨架节点上的字段（`pin: frozen`）。**如果�
 | 情形 | 表达 | 结果 |
 |---|---|---|
 | 同度齐奏 | 多声部承载同一轨 | `register_delta = 0` |
-| 八度叠置 | 另一条实例，`derived_from` + 位移 | `register_delta = ±12` |
+| 八度叠置 | 另一条实例，`use` + `op: [{octave: -1}]` | `register_delta = ±12` |
 | 承载者够不着 | **报差距**（C14），不自动降 | 人显式声明 `melody_low` |
 
 #### 位移可以写量词，但必须分类
@@ -416,8 +416,28 @@ bar 25:
 
 ```yaml
 - {bars: "21-24", use: farewell.p5}
-- {bars: "25-28", use: farewell.p5, register: 一个八度}
+- {bars: "25-28", use: farewell.p5, op: [{octave: 1}]}
 ```
+
+#### 变换链
+
+派生不是"再写一遍类似的"，而是**对已有素材做一次可指认的变换**。`op:` 是一个链，从左到右作用：
+
+| 算子 | 作用 | 位移性质 |
+|---|---|---|
+| `octave: n` | 整体移八度 | 纯音区 |
+| `transpose: n` | 移半音 | 移调（`n % 12 ≠ 0` 时） |
+| `invert: first\|n` | 旋律倒影，轴缺省 = 第一个音 | 音级关系改变 |
+| `retrograde` | 时值倒影 | 保持 |
+| `augment: k` / `diminish: k` | 时值伸缩 | 保持 |
+| `fragment: [a, b]` | 取音序号区间 | 保持 |
+| `sequence: {step, times}` | 模进：重复并逐次移高 | 移调 |
+
+三条硬规则：
+
+1. **每个派生都必须能说出血统**（“这是第 3 句的倒影”），否则 fidelity 无法追溯，派生与新写的东西在数据上无法区分。
+2. **变换改变长度时必须报差距**（C14）：`augment: 2` 需要 8 小节而只给了 4 小节 → 报错，不默默截断。
+3. **除不尽就报错**，不要四舍五入：`diminish: 3` 在 16 格网格上写不出 4 步的音。
 
 #### 改编 = 换掉某一层，保持其余层
 
@@ -580,8 +600,8 @@ bar 17:
 material:
   - {id: melody, theme: true, register: 4,
      timeline: [{bars: "5", degrees: "5:4 3:4 5:2 8:2 7:4"}]}
-  - {id: melody_low, derived_from: melody, register: 3,
-     timeline: [{bars: "17-22", use: melody}]}
+  - {id: melody_low,
+     timeline: [{bars: "17-22", use: melody, op: [{octave: -1}]}]}
 
 # 渲染：谁演奏它
 parts:
@@ -643,7 +663,7 @@ parts:
 
 ### D. 结构性缺口
 
-1. **骨架与编排已分离（阶段 A），变换与 fidelity 未接。** 素材轨 + 承载者 + `derived_from` 已落地；`op:` 变换链、无来源轨、fidelity 向量尚未实现。
+1. **骨架与编排已分离，变换已落地，fidelity 未接。** 素材轨 + 承载者 + `op:` 变换链（octave / transpose / invert / retrograde / augment / diminish / fragment / sequence，带血统追溯）已实现；无来源轨、fidelity 向量尚未实现。
 2. **四层是单声部视角。** 关系层刚起头，且只能测不能造。
 3. **轨迹模型假设素材可重复。** 通谱体就撞墙（《送别》被迫显式重复末句）。
 4. **和声空间只有三和弦。** 四度叠置、音簇、调式混合没有语法。

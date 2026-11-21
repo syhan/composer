@@ -120,44 +120,173 @@ def runs(rhythm, grid):
     return [(o, (ons[i + 1] if i + 1 < len(ons) else grid) - o) for i, o in enumerate(ons)]
 
 
-def build_material(spec):
-    """素材轨：与声部无关的时间线。register 决定简谱音级落在哪个八度。
+# ---------- 变换算子 ----------
+# 位移一律显式（C16）：register 只决定简谱音级落在哪个八度，不参与 use 的位移。
 
-    轨不知道自己由谁演奏——这是阶段 A 的全部意义。
+def _pairs(ops):
+    """op 列表允许混写 `retrograde` 与 `{octave: -1}`。"""
+    for op in ops:
+        if isinstance(op, str):
+            yield op, None
+        elif isinstance(op, dict) and len(op) == 1:
+            yield next(iter(op.items()))
+        else:
+            raise SystemExit(f"变换写法不对: {op!r}（应为 '名字' 或 {{名字: 参数}}）")
+
+
+def _octave(seq, n):
+    return [(a, d, [p + 12 * int(n) for p in ps], v) for (a, d, ps, v) in seq]
+
+
+def _transpose(seq, n):
+    return [(a, d, [p + int(n) for p in ps], v) for (a, d, ps, v) in seq]
+
+
+def _retrograde(seq, _):
+    if not seq:
+        return seq
+    end = max(a + d for a, d, _p, _v in seq)
+    return sorted(((end - a - d, d, ps, v) for (a, d, ps, v) in seq), key=lambda e: e[0])
+
+
+def _invert(seq, axis):
+    """旋律倒影。axis 缺省 = 第一个音（手算得出来，不用猜调）。"""
+    if not seq:
+        return seq
+    ax = seq[0][2][0] if axis in (None, "first") else int(axis)
+    return [(a, d, [2 * ax - p for p in ps], v) for (a, d, ps, v) in seq]
+
+
+def _augment(seq, k):
+    k = int(k)
+    return [(a * k, d * k, ps, v) for (a, d, ps, v) in seq]
+
+
+def _diminish(seq, k):
+    k = int(k)
+    out = []
+    for (a, d, ps, v) in seq:
+        if a % k or d % k:
+            raise SystemExit(f"diminish:{k} 在 {a}:{d} 上除不尽——网格太粗，这个变换写不出来")
+        out.append((a // k, d // k, ps, v))
+    return out
+
+
+def _fragment(seq, rng):
+    a, b = rng
+    sub = seq[a:b + 1]
+    if not sub:
+        return []
+    base = min(x[0] for x in sub)
+    return sorted(((x[0] - base, x[1], x[2], x[3]) for x in sub), key=lambda e: e[0])
+
+
+def _sequence(seq, arg):
+    """模进：原样重复 times 次，每次上行 step 半音。"""
+    if not seq:
+        return seq
+    step = int((arg or {}).get("step", 2))
+    times = int((arg or {}).get("times", 3))
+    span = max(a + d for a, d, _p, _v in seq)
+    out = []
+    for i in range(times):
+        for (a, d, ps, v) in seq:
+            out.append((a + i * span, d, [p + i * step for p in ps], v))
+    return out
+
+
+OPS = {"octave": _octave, "transpose": _transpose, "retrograde": _retrograde,
+       "invert": _invert, "augment": _augment, "diminish": _diminish,
+       "fragment": _fragment, "sequence": _sequence}
+
+
+def apply_ops(seq, ops):
+    """从左到右依次作用。顺序有意义：先 fragment 后 retrograde ≠ 反过来。"""
+    for name, arg in _pairs(ops or []):
+        fn = OPS.get(name)
+        if fn is None:
+            raise SystemExit(f"未知变换 {name!r}（可用: {', '.join(sorted(OPS))}）")
+        seq = fn(seq, arg)
+    return seq
+
+
+def op_shift(ops):
+    """从变换链里抽出纯位移：返回 (总半音, 是否只是位移)。"""
+    semis, pure = 0, True
+    for name, arg in _pairs(ops or []):
+        if name == "octave":
+            semis += 12 * int(arg)
+        elif name == "transpose":
+            semis += int(arg)
+        else:
+            pure = False
+    return semis, pure
+
+
+def build_material(spec):
+    """素材轨：与声部无关的时间线。轨不知道自己由谁演奏。
+
+    每个 timeline 段先展开成一条**扁平序列**（绝对步数），再过变换链，
+    最后重新分配到小节。扁平化是必须的：倒影/扩增跨小节，逐小节做不了。
     """
-    tracks = {}
+    grid = spec["meta"]["grid"]
+    tracks, warns = {}, []
     for tr in spec.get("material") or []:
         reg = tr.get("register", 4)
-        ev = {}
+        ev, lineage = {}, []
         for seg in tr["timeline"]:
-            blist = parse_bars(seg["bars"], None)
-            if "use" in seg:                       # 复用另一条轨：八度叠置 = 多一条实例
+            target = parse_bars(seg["bars"], None)
+            start_bar = target[0]
+            ops = seg.get("op") or []
+
+            if "use" in seg:
                 src = tracks.get(seg["use"])
                 if src is None:
                     raise SystemExit(f"素材 {tr['id']} 引用了尚未定义的轨 {seg['use']}")
-                shift = 12 * (seg.get("register", reg) - src["register"])
-                for b in blist:
-                    ev[b] = [(st, du, [p + shift for p in ps], v)
-                             for (st, du, ps, v) in src["events"].get(b, [])]
-                continue
-            if "degrees" not in seg:
-                raise SystemExit(f"素材 {tr['id']} 的 timeline 段既无 degrees 也无 use: {seg}")
-            vel = seg.get("velocity", 80)
-            for b in blist:
-                step, out = 0, []
+                src_bars = parse_bars(seg.get("from", seg["bars"]), None)
+                base = src_bars[0]
+                seq = [((b - base) * grid + st, du, ps, v)
+                       for b in src_bars for (st, du, ps, v) in src["events"].get(b, [])]
+                semis, pure = op_shift(ops)
+                lineage.append({"from": seg["use"], "from_bars": seg.get("from", seg["bars"]),
+                                "bars": seg["bars"], "ops": ops,
+                                "semitones": semis, "pure": pure, "tonal": semis % 12 != 0})
+            elif "degrees" in seg:
+                seq, step = [], 0
                 for tok in seg["degrees"].split():
                     deg_s, dur = tok.split(":")
                     shift = 0
                     while deg_s and deg_s[-1] in "'\u2019,":
                         shift += 7 if deg_s[-1] in "'\u2019" else -7
                         deg_s = deg_s[:-1]
-                    out.append((step, int(dur), [scale_degree(int(deg_s) + shift, reg)], vel))
+                    seq.append((step, int(dur), [scale_degree(int(deg_s) + shift, reg)],
+                                seg.get("velocity", 80)))
                     step += int(dur)
-                ev[b] = out
+                lineage.append({"from": None, "from_bars": None, "bars": seg["bars"],
+                                "ops": ops, "semitones": 0, "pure": False, "tonal": False})
+            else:
+                raise SystemExit(f"素材 {tr['id']} 的 timeline 段既无 degrees 也无 use: {seg}")
+
+            seq = apply_ops(seq, ops)
+
+            # 变换会改变长度：装不下就报，不要默默截断（C14）
+            if seq:
+                need = -(-max(a + d for a, d, _p, _v in seq) // grid)
+                if need > len(target):
+                    raise SystemExit(
+                        f"素材 {tr['id']} {seg['bars']}: 变换后需要 {need} 小节，"
+                        f"但只给了 {len(target)} 小节")
+                if need < len(target):
+                    warns.append(f"素材 {tr['id']} {seg['bars']}: 变换只填满 {need}/{len(target)} 小节，"
+                                 f"其余为静默")
+            for (a, du, ps, v) in seq:
+                if a < 0:
+                    raise SystemExit(f"素材 {tr['id']} {seg['bars']}: 变换产生了负位置")
+                ev.setdefault(start_bar + a // grid, []).append((a % grid, du, ps, v))
+
         tracks[tr["id"]] = {"register": reg, "events": ev,
-                             "theme": bool(tr.get("theme")),
-                             "derived_from": tr.get("derived_from")}
-    return tracks
+                             "theme": bool(tr.get("theme")), "lineage": lineage}
+    return tracks, warns
 
 
 def expand(spec, insts):
@@ -165,7 +294,7 @@ def expand(spec, insts):
     total = len(spec["harmony"])
     harmony = spec["harmony"]
     bars = {}
-    tracks = build_material(spec)
+    tracks, mat_warns = build_material(spec)
 
     parts = []
     for ps in spec["parts"]:
@@ -240,7 +369,7 @@ def expand(spec, insts):
                                 evs.append((st, du, [p + tr for p in ps], lvel))
                 bars.setdefault(b, []).extend((part, st, du, ps, v) for (st, du, ps, v) in evs)
 
-    return bars, parts, tracks
+    return bars, parts, tracks, mat_warns
 
 
 # ---------- 音区：推荐 / 人为覆盖 / 自动择位 ----------
@@ -343,6 +472,68 @@ def lint(bars, parts):
                                   f"（{seen[b].get('bars')} 与 {seg.get('bars')}）")
                 seen[b] = seg
     return sorted(set(errors)), sorted(set(warns))
+
+
+# ---------- 素材血统 ----------
+
+def _fmt_op(name, arg):
+    if arg is None:
+        return name
+    if isinstance(arg, dict):
+        return f"{name}({', '.join(f'{k}={v}' for k, v in arg.items())})"
+    if isinstance(arg, list):
+        return f"{name}[{', '.join(map(str, arg))}]"
+    return f"{name}({arg})"
+
+
+def lineage(tracks):
+    """每个派生素材都要能说出“我是谁的什么变换”——否则 fidelity 无法追溯。"""
+    print("\n  素材血统:")
+    for tid, t in tracks.items():
+        segs = [s for s in t["lineage"] if s["from"]]
+        if not segs:
+            print(f"    {tid:<12} —（原始）")
+            continue
+        for s in segs:
+            ops = " ".join(_fmt_op(n, a) for n, a in _pairs(s["ops"])) or "—"
+            if s["pure"]:
+                tag = "移调" if s["tonal"] else "纯音区"
+                note = f"{tag} {s['semitones']:+d}半音"
+            else:
+                note = "非纯位移（音级关系已变）"
+            frm = f"{s['from']}[{s['from_bars']}]"
+            print(f"    {tid:<12} ← {frm:<22} → [{s['bars']}]  {ops:<24} {note}")
+
+
+# ---------- 自检 ----------
+
+def selftest():
+    """每个变换配一条小到能手算的样例（R7：测量本身会撒谎）。"""
+    seq = [(0, 4, [60], 80), (4, 4, [64], 80), (8, 8, [67], 80)]
+    cases = [
+        (["retrograde"], [(0, 8, [67], 80), (8, 4, [64], 80), (12, 4, [60], 80)]),
+        ([{"octave": -1}], [(0, 4, [48], 80), (4, 4, [52], 80), (8, 8, [55], 80)]),
+        ([{"transpose": 2}], [(0, 4, [62], 80), (4, 4, [66], 80), (8, 8, [69], 80)]),
+        ([{"invert": "first"}], [(0, 4, [60], 80), (4, 4, [56], 80), (8, 8, [53], 80)]),
+        ([{"augment": 2}], [(0, 8, [60], 80), (8, 8, [64], 80), (16, 16, [67], 80)]),
+        ([{"diminish": 2}], [(0, 2, [60], 80), (2, 2, [64], 80), (4, 4, [67], 80)]),
+        ([{"fragment": [1, 2]}], [(0, 4, [64], 80), (4, 8, [67], 80)]),
+        ([{"sequence": {"step": 2, "times": 2}}],
+         [(0, 4, [60], 80), (4, 4, [64], 80), (8, 8, [67], 80),
+          (16, 4, [62], 80), (20, 4, [66], 80), (24, 8, [69], 80)]),
+        ([{"transpose": 2}, "retrograde"],
+         [(0, 8, [69], 80), (8, 4, [66], 80), (12, 4, [62], 80)]),
+    ]
+    bad = 0
+    for ops, want in cases:
+        got = apply_ops(list(seq), ops)
+        ok = got == want
+        bad += not ok
+        print(f"  {'✓' if ok else '✗'} {[ _fmt_op(n, a) for n, a in _pairs(ops)]}")
+        if not ok:
+            print(f"      want {want}\n      got  {got}")
+    print(f"\n  {len(cases) - bad}/{len(cases)} 通过")
+    raise SystemExit(1 if bad else 0)
 
 
 # ---------- 演奏可行性（把 override 变成可量化的东西）----------
@@ -506,10 +697,12 @@ def presence(spec, bars, parts):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
+    if path == "--selftest":
+        selftest()
     spec = yaml.safe_load(open(path))
     ens, insts = load_ensemble(spec, path)
 
-    bars, parts, tracks = expand(spec, insts)
+    bars, parts, tracks, mat_warns = expand(spec, insts)
     bars = autoplace(bars, parts, spec["meta"]["grid"])
     bars, pis = apply_presence(spec, bars)
 
@@ -534,6 +727,9 @@ def main():
         print("\n  在场路径检查:")
         for m in pis:
             print("    - " + m)
+    lineage(tracks)
+    for m in mat_warns:
+        print("    ! " + m)
     spelling = check_harmony(spec, bars, parts)
     print("\n  和声拼写自检:")
     print("    (clean)" if not spelling else "")
