@@ -40,6 +40,8 @@ run "measure"           python3 measure.py "$tmp/gm.wav" 112 24
 run "audition 单曲"      python3 audition.py farewell-v3.yaml --bars 17-20 --loop 2 -o "$tmp/aud1.wav"
 run "audition solo"     python3 audition.py farewell-v3.yaml --bars 17-18 --solo violin -o "$tmp/aud2.wav"
 run "audition A/B"      python3 audition.py farewell-v3.yaml farewell-v3.yaml --bars 17-18 --diff -o "$tmp/aud3.wav"
+run "probe"             python3 probe.py farewell-v3.yaml --bars 17-20
+run "probe 无音频"       python3 probe.py farewell-v3.yaml --bars 17-20 --no-audio
 
 # 音频必须真的有声音，而不是一个空壳文件
 if [ -s "$tmp/gm.wav" ]; then

@@ -12,6 +12,7 @@ farewell-v3.yaml        曲子：ensemble + 和声 + 在场路径 + 动态
 render.py               spec → MIDI + 卷帘 + 血统 + lint + 演奏可行性
 audio.py                spec → WAV（gm / synth 两种引擎）
 audition.py             内环：循环 / solo / mute / A-B / 盲测 / diff
+probe.py                把一段摊成可以对着看的分量（音区塔 / 八度 / 频谱）
 synth.py                零依赖 numpy 合成器
 measure.py              WAV → 每小节 RMS
 lyrics.py               歌词逐字对到主题轨上
@@ -38,6 +39,11 @@ python3 audition.py farewell-v3.yaml --bars 17-20 --solo violin
 python3 audition.py farewell-v3.yaml --bars 17-20 --mute piano
 python3 audition.py A.yaml B.yaml --bars 17-20 --diff        # A/B + 说清差在哪
 python3 audition.py A.yaml B.yaml --bars 17-20 --blind       # 盲测，顺序写进 audition-key.txt
+
+# 探针：把一段摊开（它不理解你的话，只把该看的摆出来）
+python3 probe.py farewell-v3.yaml --bars 17-20
+python3 probe.py farewell-v3.yaml --bars 17-20 --solo violin
+python3 probe.py farewell-v3.yaml --bars 17-20 --no-audio     # 只看乐谱层
 ```
 
 `audio.py` 的 `gm` 引擎失败会**如实回落**到 `synth` 并说明原因，不假装成功。
