@@ -1,84 +1,54 @@
 # spike 1｜spec → 可听 + 可量
 
-## 结构（编制是输入）
+只讲**怎么跑**。为什么这样设计，见仓库根目录的 `README.md`。
+
+## 结构
 
 ```
 instruments/*.yaml      一件乐器：gm_program / range / comfort / roles / idioms / drum_map
 ensembles/band.yaml     这套编制：有哪些座位、谁有 overrides
-farewell-v3.yaml        曲子：ensemble 引用 + 和声 + 在场路径 + 动态 + 各声部段
-render.py               spec → MIDI + 卷帘 + lint
+farewell-v3.yaml        曲子：ensemble + 和声 + 在场路径 + 动态
+                        + material（骨架，与谁演奏无关）+ parts（carries / segments）
+render.py               spec → MIDI + 卷帘 + 血统 + lint + 演奏可行性
+audio.py                spec → WAV（gm / synth 两种引擎）
+synth.py                零依赖 numpy 合成器
+measure.py              WAV → 每小节 RMS
+lyrics.py               歌词逐字对到主题轨上
+relations.py            成对关系指标
+smoke.sh                所有入口跑一遍
 ```
 
-改编制只改 `ensembles/`，不碰代码。音区三层：`range`（越界=错误）/ `comfort`（越界=提示）/ 座位 `overrides`（优先）。
-`place: auto` 会自己挑一个八度，让材料尽量待在舒适区里。
-
-座位可以起别名（`as:`），所以同一件乐器能坐两个人（节奏吉他 / 主音吉他）。座位 id 必须唯一，重复会直接报错。
-
-## 演奏可行性报告
-
-`report()` 把"这个乐手演不演得下来"拆成可量的几条：发声总长、**最长连续（对比体力上限）**、
-舒适区时长占比、越界时长、大跳次数、最高音。
-
-它立刻抓到一个真问题：**这份编曲里没有任何休息。** 长号连续 80 拍、电吹管连续 24 拍，
-上限都是 8——因为"在场路径"只有整小节的粒度，谁在场谁就一直吹。
-真正的编排需要**小节内部的呼吸**，这是下一个要补的维度。
-
-
-零依赖（numpy / PyYAML），全流程 < 1 秒，不需要 MuseScore / DAW / 网络。
+## 命令
 
 ```bash
 cd spikes/01
 
-# 1) spec -> MIDI + 钢琴卷帘 + 在场路径检查 + lint
-python3 render.py farewell-v3.yaml
-
-# 2) 真音源（FluidR3_GM）：MIDI -> 音频
-rm -f farewell-v3-gm.wav                      # ← fluidsynth 是**追加**写入，必须先删
-fluidsynth -ni -F farewell-v3-gm.wav /usr/share/soundfonts/FluidR3_GM.sf2 farewell-v3.mid
-
-# 3) 量出来（不要靠耳朵猜）
-python3 measure.py farewell-v3-gm.wav 112 24
-
-# 4) 备用：零依赖糙合成器（没有 soundfont 时也能听结构）
-python3 synth.py farewell-v3.yaml
-```
-
-## 三个已经踩过的坑
-
-1. **fluidsynth 的 `-F` 追加写入**，不覆盖。不 `rm` 就会得到两段音频首尾相接，
-   然后所有逐小节测量全错（而且错得很像"音乐有问题"）。
-2. **fluidsynth 输出立体声**，按帧算时间必须 `reshape(-1, nch)`，否则时长看起来是两倍。
-3. **velocity 做不出段落级强弱**。音符力度只管音符内部；`ff` 与 `mf` 的差别必须靠
-   **CC7 通道音量自动化**（spec 里的 `dynamics`）。第一版没有 CC7，量出来的曲线是平的。
-
-## 现在的实测曲线
-
-```
-bar  1    3    5    9    13   17   21   23   24
-   -73  -56  -45  -40  -32  -24  -21  -45  -20  dB
-                        ↑电吉他 ↑全员 ↑顶点 ↑拆人 ↑最强
-```
-
-单调上升 → 第 17 小节 +8.8 dB（全员进来）→ 第 21 小节到顶 → 第 23 小节 **-24.0 dB**（拆人）→
-第 24 小节 **+25.1 dB**（最后一击）。设计意图现在是可以核对的数字。
-
-## 待办
-
-- 旋律已是真实简谱（20 小节 = 5 句 × 4 小节）。**音高确定，节奏是我推的**
-  （简谱没给时值，我按 4/4 十六分格填的），每小节一行 `degrees`，改一行就换一小节。
-
-## 关系层（3.11）
-
-```bash
+./smoke.sh                              # 先跑这个：所有入口 + 计时
+python3 render.py farewell-v3.yaml      # MIDI + 卷帘 + lint
+python3 render.py --selftest            # 变换算子的手算样例
+python3 audio.py farewell-v3.yaml -o out.wav --engine gm
+python3 measure.py out.wav 112 24
+python3 lyrics.py farewell-v3.yaml
 python3 relations.py farewell-v3.yaml
 ```
 
-不算禁令，只算两件事：**每小节实际最容易听到谁**（显著度剖面）、**哪两个声部在交织/在糊**（成对指标）。
+`audio.py` 的 `gm` 引擎失败会**如实回落**到 `synth` 并说明原因，不假装成功。
 
-三个诚实的局限：
+## 踩过的坑
 
-1. **显著度会把"最忙的"当成"最突出的"**。本曲它一直报电贝斯——因为贝斯八分音符不停，而别人在拖长音。
-   真正被听到的往往是小提琴。所以这个数字只能当"去听一下这里"的提示，不是结论。
-2. **交错度奖励"一疏一密"**（鼓 × 长号 0.82 排第一），不是真正的 hocket。要测"互补"还得看同一拍位上的空隙。
-3. 同一对声部会**同时出现在"碰撞"和"叠置"两张表里**（EWI × 小提琴 中位音程 0、重合 100%）。
-   这不是 bug，是这类数字的极限：**齐奏和糊在数值上长得一模一样，只有耳朵能分开。**
+1. **fluidsynth 会挂死**，不是慢，是不返回。两个独立原因：启动时去连 PipeWire/Pulse 的套接字，
+   以及枚举 ALSA 设备——两者都在解析 `-a file` 之前发生。隔离办法（`audio.py` 里已做）：
+   `XDG_RUNTIME_DIR`/`PIPEWIRE_RUNTIME_DIR`/`PULSE_RUNTIME_PATH` 指向空目录、
+   `PULSE_SERVER`/`DBUS_SESSION_BUS_ADDRESS` 指向不存在、`ALSA_CONFIG_PATH=/dev/null`。
+   不隔离时 10 次挂 2 次；隔离后 30/30。
+   另外它的 stdout 是块缓冲，卡住时看起来像"没有任何输出"。
+2. **`-F` 是追加写入**，不覆盖。永远写新文件再改名，否则两次渲染首尾相接，
+   逐小节测量全错——而且错得很像"音乐有问题"。
+3. **输出是立体声**，按帧算时间必须 `reshape(-1, nch)`，否则时长看起来是两倍。
+4. **velocity 做不出段落级强弱**，必须靠 CC7 通道音量（spec 里的 `dynamics`）。
+5. **外部进程一律带 timeout**。没有超时的那一次，一条永不返回的命令吃掉了一小时。
+
+## 约定
+
+- 工作渲染（`*.mid` / `*.wav` / `*.mp3`）不进仓库；`samples/` 下是"被接受的版本"，要进。
+- 每个指标都要有一条小到能手算的样例（`render.py --selftest` 就是干这个的）。

@@ -79,11 +79,10 @@ def drum(kind_pitch, vel):
     return np.random.randn(len(t)) * np.exp(-t * 3.2) * 0.45 * vel / 127
 
 
-def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "spikes/01/farewell-v3.yaml"
+def render(path, out=None):
     spec = yaml.safe_load(open(path))
     ens, insts = load_ensemble(spec, path)
-    bars, parts = expand(spec, insts)
+    bars, parts, _tracks, _warns = expand(spec, insts)
     bars, _ = apply_presence(spec, bars)
     kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck"))
                for p in parts}
@@ -110,11 +109,16 @@ def main():
 
     peak = np.max(np.abs(buf)) or 1.0
     buf = buf / peak * 0.92
-    out = path.rsplit(".", 1)[0] + ".wav"
+    out = out or path.rsplit(".", 1)[0] + ".wav"
     with wave.open(out, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
         w.writeframes((buf * 32767).astype("<i2").tobytes())
-    print(f"wrote {out}  ({total/SR:.1f}s)")
+    return out
+
+
+def main():
+    path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
+    print(f"wrote {render(path)}")
 
 
 if __name__ == "__main__":
