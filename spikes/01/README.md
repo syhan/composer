@@ -11,6 +11,7 @@ farewell-v3.yaml        曲子：ensemble + 和声 + 在场路径 + 动态
                         + material（骨架，与谁演奏无关）+ parts（carries / segments）
 render.py               spec → MIDI + 卷帘 + 血统 + lint + 演奏可行性
 audio.py                spec → WAV（gm / synth 两种引擎）
+audition.py             内环：循环 / solo / mute / A-B / 盲测 / diff
 synth.py                零依赖 numpy 合成器
 measure.py              WAV → 每小节 RMS
 lyrics.py               歌词逐字对到主题轨上
@@ -30,6 +31,13 @@ python3 audio.py farewell-v3.yaml -o out.wav --engine gm
 python3 measure.py out.wav 112 24
 python3 lyrics.py farewell-v3.yaml
 python3 relations.py farewell-v3.yaml
+
+# 内环：听、比、改
+python3 audition.py farewell-v3.yaml --bars 17-20 --loop 4 --play
+python3 audition.py farewell-v3.yaml --bars 17-20 --solo violin
+python3 audition.py farewell-v3.yaml --bars 17-20 --mute piano
+python3 audition.py A.yaml B.yaml --bars 17-20 --diff        # A/B + 说清差在哪
+python3 audition.py A.yaml B.yaml --bars 17-20 --blind       # 盲测，顺序写进 audition-key.txt
 ```
 
 `audio.py` 的 `gm` 引擎失败会**如实回落**到 `synth` 并说明原因，不假装成功。
@@ -47,6 +55,9 @@ python3 relations.py farewell-v3.yaml
 3. **输出是立体声**，按帧算时间必须 `reshape(-1, nch)`，否则时长看起来是两倍。
 4. **velocity 做不出段落级强弱**，必须靠 CC7 通道音量（spec 里的 `dynamics`）。
 5. **外部进程一律带 timeout**。没有超时的那一次，一条永不返回的命令吃掉了一小时。
+6. **PipeWire 卡住时，所有音频客户端都会无限等**：`pw-play` / `paplay` / `pactl` 全部挂住，
+   但 `pw-cli info 0` 能拿到 core 信息后也不退出。这不是我们的 bug，但 `--play` 必须带超时，
+   否则它会把整个内环拖死。音频文件本身总是能写出来的，卡住的只是播放。
 
 ## 约定
 

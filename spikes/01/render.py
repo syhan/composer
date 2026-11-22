@@ -629,7 +629,12 @@ def dynamics_map(spec):
     return lvl
 
 
-def build_midi(spec, bars, parts, melody=True):
+def build_midi(spec, bars, parts, melody=True, first=1):
+    """first = 输出时间轴上的第 1 小节对应原谱的哪一小节。
+
+    内环只想要第 17-20 小节时，传 first=16（多留一小节 preroll，
+    让从前一小节拖过来的音保留起音），然后按时间切音频。
+    """
     meta = spec["meta"]
     div, grid = meta["division"], meta["grid"]
     tps = div // (grid // meta["meter"][0])
@@ -648,11 +653,11 @@ def build_midi(spec, bars, parts, melody=True):
         evs = [(0, 0, meta_text(part["name"])), (0, 1, bytes([0xC0 | ch, part["gm_program"]]))]
         for bar in sorted(bars):
             if bar in lvl:
-                evs.append(((bar - 1) * grid * tps, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
+                evs.append(((bar - first) * grid * tps, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
             for (p, st, du, pitches, vel) in bars[bar]:
                 if p is not part:
                     continue
-                t0 = (bar - 1) * grid * tps + st * tps
+                t0 = (bar - first) * grid * tps + st * tps
                 t1 = t0 + du * tps
                 for i, pitch in enumerate(pitches):
                     evs.append((t0, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
