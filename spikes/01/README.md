@@ -44,20 +44,25 @@ python3 audition.py A.yaml B.yaml --bars 17-20 --blind       # 盲测，顺序�
 
 ## 踩过的坑
 
-1. **fluidsynth 会挂死**，不是慢，是不返回。两个独立原因：启动时去连 PipeWire/Pulse 的套接字，
-   以及枚举 ALSA 设备——两者都在解析 `-a file` 之前发生。隔离办法（`audio.py` 里已做）：
-   `XDG_RUNTIME_DIR`/`PIPEWIRE_RUNTIME_DIR`/`PULSE_RUNTIME_PATH` 指向空目录、
-   `PULSE_SERVER`/`DBUS_SESSION_BUS_ADDRESS` 指向不存在、`ALSA_CONFIG_PATH=/dev/null`。
-   不隔离时 10 次挂 2 次；隔离后 30/30。
-   另外它的 stdout 是块缓冲，卡住时看起来像"没有任何输出"。
+1. **fluidsynth 会卡在音频设备发现上**，而渲染到文件并不需要音频设备。它启动时先连 PipeWire/Pulse、
+   再枚举 ALSA，两者都在解析 `-a file` 之前。音频栈一不健康，它就无限等；stdout 是块缓冲，
+   所以看起来像"没有任何输出"。
+
+   这次的真病因是**PipeWire 整个卡死**：`pw-play` / `pactl` / `pw-cli` 全部不退出。
+   重启 `systemctl --user restart pipewire pipewire-pulse wireplumber` 后恢复正常。
+
+   但 `audio.py` 仍然隔离（`XDG_RUNTIME_DIR` 指空目录、`ALSA_CONFIG_PATH=/dev/null` 等）：
+   渲染不应该依赖音频服务是否健康——你在开会、在放音乐、或者服务又卡了，都不该影响内环。
+   隔离后 30/30 成功，4 小节 80ms。
 2. **`-F` 是追加写入**，不覆盖。永远写新文件再改名，否则两次渲染首尾相接，
    逐小节测量全错——而且错得很像"音乐有问题"。
 3. **输出是立体声**，按帧算时间必须 `reshape(-1, nch)`，否则时长看起来是两倍。
 4. **velocity 做不出段落级强弱**，必须靠 CC7 通道音量（spec 里的 `dynamics`）。
 5. **外部进程一律带 timeout**。没有超时的那一次，一条永不返回的命令吃掉了一小时。
 6. **PipeWire 卡住时，所有音频客户端都会无限等**：`pw-play` / `paplay` / `pactl` 全部挂住，
-   但 `pw-cli info 0` 能拿到 core 信息后也不退出。这不是我们的 bug，但 `--play` 必须带超时，
-   否则它会把整个内环拖死。音频文件本身总是能写出来的，卡住的只是播放。
+   连 `pw-cli info 0` 都是拿到 core 信息后不退出。修法是
+   `systemctl --user restart pipewire pipewire-pulse wireplumber`。
+   但 `--play` 仍然必须带超时，否则一次卡死就把整个内环拖死；音频文件总是能写出来的。
 
 ## 约定
 

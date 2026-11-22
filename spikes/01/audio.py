@@ -6,18 +6,22 @@
   gm      fluidsynth + SF2。音质够判断，整曲 0.9 秒。
   synth   零依赖 numpy。糙，但永远能跑（gm 坏掉时它还在）。
 
-⚠️ fluidsynth 在这台机器上会**挂死**，不是慢，是不返回。两个独立的原因：
+⚠️ fluidsynth 会卡在音频设备发现上，而渲染到文件并不需要音频设备。
 
-   1. 它在解析 `-a file` 之前就去连 PipeWire/Pulse 的套接字，连不上就永远等。
-   2. 它启动时还会枚举 ALSA 设备（就算用文件驱动），那一步也会阻塞。
+   它启动时先连 PipeWire/Pulse 的套接字、再枚举 ALSA 设备，**都在解析 `-a file` 之前**。
+   只要音频栈不健康，它就无限等，而且 stdout 是块缓冲——看起来像"没有任何输出"。
 
-   对应地要把它与整个音频栈隔离：
+   病因与症状：这台机器的 PipeWire 曾整个卡死（`pw-play` / `pactl` / `pw-cli` 全部不退出），
+   当时不隔离跑 10 次挂 2 次。重启 `pipewire` + `wireplumber` 后，不隔离也 6/6 正常。
+
+   但**隔离仍然保留**：渲染不应该依赖音频服务是否健康（C2）。你正在开会、正在放音乐、
+   或者服务又卡了，都不该影响内环能不能出声。隔离手段：
+
      XDG_RUNTIME_DIR / PIPEWIRE_RUNTIME_DIR / PULSE_RUNTIME_PATH → 空目录
      PULSE_SERVER / DBUS_SESSION_BUS_ADDRESS → 不存在
      ALSA_CONFIG_PATH=/dev/null                      → 不枚举任何声卡
 
    隔离后：4 小节 80ms，整曲 0.9s，30/30 成功。
-   不隔离：同一条命令 10 次里挂 2 次，每次都是无限等。
 
 ⚠️ fluidsynth 的 -F 是**追加**不是覆盖。所以永远写到一个新文件再改名。
    （这个坑吃过一次：两次渲染拼在一起，每个小节的测量值全错，而看起来像音乐问题。）
@@ -47,7 +51,7 @@ def render_midi(spec_path, mid_path):
 
 
 def _isolated_env(rt):
-    """把 fluidsynth 和整个音频栈隔开，否则它会卡在设备发现上。"""
+    """把 fluidsynth 和音频栈隔开：渲染不该依赖音频服务是否健康。"""
     return dict(
         os.environ,
         XDG_RUNTIME_DIR=rt,
