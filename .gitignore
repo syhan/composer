@@ -7,6 +7,7 @@ __pycache__/
 /spikes/**/*.mid
 /spikes/**/*.wav
 /spikes/**/*.mp3
-/spikes/**/audition-key.txt   # 盲测答案，不该进仓库
+# 盲测答案：不能进仓库，否则盲测就失效了
+/spikes/**/audition-key.txt
 
 # 例外：samples/ 下是"被接受的版本"，要进仓库
