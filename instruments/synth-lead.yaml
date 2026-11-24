@@ -1,0 +1,14 @@
+id: synth-lead
+name: Synth Lead
+family: wind-synth
+gm_program: 81          # GM 82 Lead 2 (sawtooth)
+polyphonic: false
+staves: 1
+range: [48, 96]       # C3–C7
+comfort: [55, 88]       # G3–E6
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [lead]
+idioms:
+  max_simultaneous: 1
+  breath: false
+  notes: "冷的那一面：锯齿波，高音区会刺"

@@ -1,0 +1,14 @@
+id: music-box
+name: Music Box
+family: plucked
+gm_program: 10          # GM 11 Music Box
+polyphonic: true
+staves: 1
+range: [60, 100]      # C4–E7
+comfort: [72, 96]       # C5–C7
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [lead, memory]
+idioms:
+  max_simultaneous: 3
+  breath: false
+  notes: "高音区才像八音盒；低音区会变成木琴"

@@ -4,12 +4,29 @@
 编制是输入（ensembles/*.yaml + instruments/*.yaml），不是代码里的常量。
 除 PyYAML 外零依赖：内环必须能 headless 跑，2 秒内出声。
 """
+import itertools
 import os
 import sys
+from typing import Any
+
 import yaml
 
 PITCH_NAMES = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"]
 MAJOR = [0, 2, 4, 5, 7, 9, 11]
+
+
+def load_yaml(path, what) -> Any:
+    """读一个 YAML 文件，出错时说明白是哪个文件、找的是什么。
+
+    返回 Any：YAML 本来就没有静态类型，与其假装有，不如让检查器闭嘴。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        raise SystemExit(f"找不到{what}: {path}") from None
+    except yaml.YAMLError as e:
+        raise SystemExit(f"{what} 不是合法 YAML: {path}\n{e}") from e
 
 
 # ---------- 编制（输入）----------
@@ -20,13 +37,13 @@ def load_ensemble(spec, spec_path):
     if not rel:
         raise SystemExit("spec 里缺 ensemble: —— 编制必须显式声明，不能隐含")
     ens_path = os.path.join(os.path.dirname(os.path.abspath(spec_path)), rel)
-    ens = yaml.safe_load(open(ens_path))
+    ens = load_yaml(ens_path, "编制文件")
     inst_dir = os.path.join(os.path.dirname(ens_path), "..", "instruments")
 
     insts, ch, dup = {}, 0, []
     for seat in ens["seats"]:
         base = seat["instrument"]
-        d = dict(yaml.safe_load(open(os.path.join(inst_dir, base + ".yaml"))))
+        d = dict(load_yaml(os.path.join(inst_dir, base + ".yaml"), f"乐器 {base}"))
         d.update(seat.get("overrides") or {})
         inst = seat.get("as") or base          # 座位可起别名：同一乐器坐两个人
         if inst in insts:
@@ -81,7 +98,8 @@ def resolve(pitch, h, part, prev=None):
     base = (part["base_octave"] + 1) * 12
     root_pc = h["chord"][0]
     root = base + root_pc
-    iv = lambda pc: (pc - root_pc) % 12
+    def iv(pc):
+        return (pc - root_pc) % 12
     if pitch == "root":
         p = (part["base_octave"] + 1) * 12 + h["bass"]
         while p < base:
@@ -134,12 +152,30 @@ def _pairs(ops):
             raise SystemExit(f"变换写法不对: {op!r}（应为 '名字' 或 {{名字: 参数}}）")
 
 
+def _int_arg(name, arg, default=None):
+    """变换参数：缺省值可有可无，但给了就必须是整数。
+
+    以前写成 int(arg)，于是 `- octave`（漏了数字）会抛 TypeError 加一屏堆栈，
+    报错里看不出是哪个算子。P8：失败要指名道姓。
+    """
+    if arg is None:
+        if default is None:
+            raise SystemExit(f"{name} 需要一个整数，比如 - {name}: 1")
+        return default
+    try:
+        return int(arg)
+    except (TypeError, ValueError):
+        raise SystemExit(f"{name} 的参数要是整数，拿到 {arg!r}") from None
+
+
 def _octave(seq, n):
-    return [(a, d, [p + 12 * int(n) for p in ps], v) for (a, d, ps, v) in seq]
+    n = _int_arg("octave", n)
+    return [(a, d, [p + 12 * n for p in ps], v) for (a, d, ps, v) in seq]
 
 
 def _transpose(seq, n):
-    return [(a, d, [p + int(n) for p in ps], v) for (a, d, ps, v) in seq]
+    n = _int_arg("transpose", n)
+    return [(a, d, [p + n for p in ps], v) for (a, d, ps, v) in seq]
 
 
 def _retrograde(seq, _):
@@ -153,17 +189,17 @@ def _invert(seq, axis):
     """旋律倒影。axis 缺省 = 第一个音（手算得出来，不用猜调）。"""
     if not seq:
         return seq
-    ax = seq[0][2][0] if axis in (None, "first") else int(axis)
+    ax = seq[0][2][0] if axis in (None, "first") else _int_arg("invert", axis)
     return [(a, d, [2 * ax - p for p in ps], v) for (a, d, ps, v) in seq]
 
 
 def _augment(seq, k):
-    k = int(k)
+    k = _int_arg("augment", k)
     return [(a * k, d * k, ps, v) for (a, d, ps, v) in seq]
 
 
 def _diminish(seq, k):
-    k = int(k)
+    k = _int_arg("diminish", k)
     out = []
     for (a, d, ps, v) in seq:
         if a % k or d % k:
@@ -185,8 +221,10 @@ def _sequence(seq, arg):
     """模进：原样重复 times 次，每次上行 step 半音。"""
     if not seq:
         return seq
-    step = int((arg or {}).get("step", 2))
-    times = int((arg or {}).get("times", 3))
+    if not isinstance(arg, dict):
+        raise SystemExit(f"sequence 的参数要是 {{step: 半音, times: 次数}}，拿到 {arg!r}")
+    step = _int_arg("sequence.step", arg.get("step"), default=2)
+    times = _int_arg("sequence.times", arg.get("times"), default=3)
     span = max(a + d for a, d, _p, _v in seq)
     out = []
     for i in range(times):
@@ -215,9 +253,9 @@ def op_shift(ops):
     semis, pure = 0, True
     for name, arg in _pairs(ops or []):
         if name == "octave":
-            semis += 12 * int(arg)
+            semis += 12 * _int_arg("octave", arg)
         elif name == "transpose":
-            semis += int(arg)
+            semis += _int_arg("transpose", arg)
         else:
             pure = False
     return semis, pure
@@ -259,9 +297,17 @@ def build_material(spec):
                     while deg_s and deg_s[-1] in "'\u2019,":
                         shift += 7 if deg_s[-1] in "'\u2019" else -7
                         deg_s = deg_s[:-1]
+                    if int(deg_s) == 0:            # 0 = 休止：只推进时间
+                        step += int(dur)
+                        continue
                     seq.append((step, int(dur), [scale_degree(int(deg_s) + shift, reg)],
                                 seg.get("velocity", 80)))
                     step += int(dur)
+                if seg.get("repeat"):
+                    # 一小节素材，逐小节重复（嗡鸣、固定音型）。
+                    # 没有这一条就只能写 32 行一模一样的时间线。
+                    seq = [(a + (b - start_bar) * grid, du, ps, v)
+                           for b in target for (a, du, ps, v) in seq]
                 lineage.append({"from": None, "from_bars": None, "bars": seg["bars"],
                                 "ops": ops, "semitones": 0, "pure": False, "tonal": False})
             else:
@@ -342,6 +388,9 @@ def expand(spec, insts):
                         while deg_s and deg_s[-1] in "'\u2019,":
                             shift += 7 if deg_s[-1] in "'\u2019" else -7
                             deg_s = deg_s[:-1]
+                        if int(deg_s) == 0:        # 0 = 休止
+                            step += int(dur)
+                            continue
                         evs.append((step, int(dur),
                                     [scale_degree(int(deg_s) + shift, part["base_octave"], tr)], vel))
                         step += int(dur)
@@ -355,7 +404,7 @@ def expand(spec, insts):
                         pitch, rhythm = pat["pitch"], pat["rhythm"]
                         if is_drum:
                             dmap = part["drum_map"]
-                            for st, du in runs(rhythm, grid):
+                            for st, _du in runs(rhythm, grid):
                                 evs.append((st, 1, [dmap[pitch]], lvel))
                         elif pitch == "arp":
                             tones = resolve("arp", h, part)
@@ -384,8 +433,8 @@ def autoplace(bars, parts, grid):
         best = None
         for shift in range(-24, 25, 12):
             cost = 0
-            for b, evs in bars.items():
-                for (p, st, du, ps, v) in evs:
+            for evs in bars.values():
+                for (p, _st, du, ps, _v) in evs:
                     if p is not part:
                         continue
                     for x in ps:
@@ -394,6 +443,8 @@ def autoplace(bars, parts, grid):
                                       (1 if not (lo_c <= y <= hi_c) else 0))
             if best is None or cost < best[0]:
                 best = (cost, shift)
+        if best is None:                 # 这个座位一个小节都没发声：没什么可择位的
+            continue
         shift = best[1]
         if shift:
             part["_shift"] = shift
@@ -414,6 +465,7 @@ def apply_presence(spec, bars):
         for b in parse_bars(seg["bars"], len(spec["harmony"])):
             declared[b] = set(seg["parts"])
     out, issues = {}, []
+    silent = {}          # 声明在场却一小节没响：报钟、报时这类乐器本来就该这样
     for b, evs in bars.items():
         allowed = declared.get(b)
         if allowed is None:
@@ -424,9 +476,22 @@ def apply_presence(spec, bars):
             if part["name"] not in allowed:
                 issues.append(f"bar {b}: {part['name']} 有音符但不在场路径里（已静音）")
         for name in sorted(allowed):
-            if not any(e[0]["name"] == name for e in kept):
-                issues.append(f"bar {b}: {name} 声明在场但没有音符")
+            if any(e[0]["name"] == name for e in kept):
+                continue
+            silent.setdefault(name, []).append(b)
         out[b] = kept
+
+    # 连续 4 小节以上"在场但没响"才值得说一句——那通常是漏写，不是休止。
+    # 报钟敲一下、静三小节，是音乐，不是错误（C18：描述性测量不进 lint）。
+    for name, bs in sorted(silent.items()):
+        run = []
+        for b in bs + [None]:
+            if run and (b is None or b != run[-1] + 1):
+                if len(run) >= 4:
+                    issues.append(f"bar {run[0]}-{run[-1]}: {name} 声明在场但连续 {len(run)} 小节没有音符")
+                run = []
+            if b is not None:
+                run.append(b)
     return out, sorted(set(issues))
 
 
@@ -438,7 +503,7 @@ def check_harmony(spec, bars, parts):
     for b, evs in bars.items():
         h = chord_at(spec["harmony"], b)
         allowed = {pc % 12 for pc in h["chord"]} | {h["bass"] % 12}
-        for (part, st, du, pitches, vel) in evs:
+        for (part, _st, _du, pitches, _vel) in evs:
             if part.get("drum") or part["id"] in skip:
                 continue
             for p in pitches:
@@ -451,7 +516,7 @@ def check_harmony(spec, bars, parts):
 def lint(bars, parts):
     errors, warns = [], []
     for b in sorted(bars):
-        for (part, st, du, pitches, vel) in bars[b]:
+        for (part, _st, _du, pitches, _vel) in bars[b]:
             if part.get("drum") or not part.get("range"):
                 continue
             lo_r, hi_r = part["range"]
@@ -532,7 +597,17 @@ def selftest():
         print(f"  {'✓' if ok else '✗'} {[ _fmt_op(n, a) for n, a in _pairs(ops)]}")
         if not ok:
             print(f"      want {want}\n      got  {got}")
-    print(f"\n  {len(cases) - bad}/{len(cases)} 通过")
+    # 只渲染后半段时不能发出负 tick：负 delta-time 会得到畸形 MIDI，
+    # fluidsynth 读它的时候不报错、不返回，就那么挂着（踩过一次）。
+    spec = {"meta": {"tempo": 120, "division": 480, "grid": 16, "meter": [4, 4], "title": "t"},
+            "harmony": ["C5"] * 4,
+            "color": [{"bars": "1-4", "reverb": [40, 120], "brightness": 90}]}
+    evs = color_events(spec, 3, 16, 480 // (16 // 4))
+    ok = bool(evs) and min(t for (t, _c, _v) in evs) >= 0 and min(t for (t, _c, _v) in evs) == 0
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 只渲染后半段：CC 不发负 tick，且窗口起点有值")
+    total = len(cases) + 1
+    print(f"\n  {total - bad}/{total} 通过")
     raise SystemExit(1 if bad else 0)
 
 
@@ -573,7 +648,7 @@ def report(bars, parts, grid=16):
         leaps, top = 0, None
         if part.get("monophonic"):
             seq = [ps[0] for _b, _s, _d, ps in evs]
-            leaps = sum(1 for x, y in zip(seq, seq[1:]) if abs(y - x) > 7)
+            leaps = sum(1 for x, y in itertools.pairwise(seq) if abs(y - x) > 7)
         top = max((x for *_r, ps in evs for x in ps), default=None)
 
         cap = (part.get("stamina") or {}).get("max_continuous_beats")
@@ -589,7 +664,10 @@ def report(bars, parts, grid=16):
     print("\n  演奏可行性（每一条都是量的，不是形容词）:")
     print(f"    {'声部':<16}{'发声':>6}{'连续/上限':>12}{'舒适区':>8}{'越域':>7}{'大跳':>6}{'最高':>7}")
     for r in rows:
-        cap = f"{r['longest']:.0f}/{r['cap']:.0f}" if r["cap"] else f"{r['longest']:.0f}/—"
+        # 0.5 拍别显示成 0：机器音型每两格就停一次，最长连续真的只有半拍。
+        def _b(v):
+            return f"{v:.0f}" if abs(v - round(v)) < 0.05 else f"{v:.1f}"
+        cap = f"{_b(r['longest'])}/{_b(r['cap'])}" if r["cap"] else f"{_b(r['longest'])}/—"
         flag = " ✗" if r["over"] else (" !" if r["comfort"] < 90 else "")
         print(f"    {r['name'][:15]:<16}{r['total']:>5.0f}b{cap:>12}"
               f"{r['comfort']:>7.0f}%{r['range_bad']:>6.0f}b{r['leaps']:>6}{r['top']:>7}{flag}")
@@ -629,6 +707,40 @@ def dynamics_map(spec):
     return lvl
 
 
+def color_events(spec, first, grid, tps):
+    """CC 自动化：混响 91 / 合唱 93 / 亮度 74。
+
+    值可以是常数，也可以是 [起, 止] —— 后者在区间内按拍线性插值，
+    于是"混响慢慢推上去"是一条曲线，不是一级一级的阶梯（§8 D5）。
+    """
+    total = len(spec["harmony"])
+    out = []
+    for seg in spec.get("color") or []:
+        bs = parse_bars(seg["bars"], total)
+        b0, b1 = bs[0], bs[-1]
+        n = (b1 - b0 + 1) * grid
+        for key, cc in (("reverb", 91), ("chorus", 93), ("brightness", 74)):
+            if key not in seg:
+                continue
+            v = seg[key]
+            va, vb = (v[0], v[1]) if isinstance(v, (list, tuple)) else (v, v)
+            pre = None
+            for i in range(0, n, 4):
+                frac = i / max(1, n - 1)
+                val = max(0, min(127, round(va + (vb - va) * frac)))
+                t = ((b0 - first) * grid + i) * tps
+                if t < 0:
+                    # 渲染窗口之前：记住最后一档，压到 0 号 tick 上，
+                    # 否则只渲染后半段时混响会从 0 突然跳起来。
+                    pre = val
+                    continue
+                if pre is not None:
+                    out.append((0, cc, pre))
+                    pre = None
+                out.append((t, cc, val))
+    return out
+
+
 def build_midi(spec, bars, parts, melody=True, first=1):
     """first = 输出时间轴上的第 1 小节对应原谱的哪一小节。
 
@@ -644,6 +756,7 @@ def build_midi(spec, bars, parts, melody=True, first=1):
                  (0, 2, meta_text(meta["title"]))]
     tracks = [track_chunk(conductor)]
     lvl = dynamics_map(spec)
+    colors = color_events(spec, first, grid, tps)
 
     for part in parts:
         if not melody and part.get("_theme"):
@@ -651,8 +764,15 @@ def build_midi(spec, bars, parts, melody=True, first=1):
             continue
         ch = part["channel"]
         evs = [(0, 0, meta_text(part["name"])), (0, 1, bytes([0xC0 | ch, part["gm_program"]]))]
+        for (t, cc, val) in colors:
+            evs.append((t, 1, bytes([0xB0 | ch, cc, val])))
+        # 只渲染后半段时，窗口开始前最后一条力度要压到 0 号 tick，
+        # 不然前几小节会用音源的默认音量（100），听起来像突然一记重音。
+        prior = [b for b in lvl if b < first]
+        if prior:
+            evs.append((0, 1, bytes([0xB0 | ch, 7, int(lvl[max(prior)] * 127)])))
         for bar in sorted(bars):
-            if bar in lvl:
+            if bar in lvl and bar >= first:
                 evs.append(((bar - first) * grid * tps, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
             for (p, st, du, pitches, vel) in bars[bar]:
                 if p is not part:
@@ -683,7 +803,7 @@ def roll(spec, bars, parts):
             cells = []
             for b in block:
                 line = ["."] * grid
-                for (p, st, du, pitches, vel) in bars.get(b, []):
+                for (p, st, du, _pitches, _vel) in bars.get(b, []):
                     if p is not part:
                         continue
                     for k in range(st, min(grid, st + du)):
@@ -704,7 +824,7 @@ def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
     if path == "--selftest":
         selftest()
-    spec = yaml.safe_load(open(path))
+    spec = load_yaml(path, "spec")
     ens, insts = load_ensemble(spec, path)
 
     bars, parts, tracks, mat_warns = expand(spec, insts)
@@ -714,7 +834,11 @@ def main():
     out = path.rsplit(".", 1)[0]
     for name, with_mel in ((out + ".mid", True), (out + "-nomelody.mid", False)):
         m = build_midi(spec, bars, parts, melody=with_mel)
-        open(name, "wb").write(m)
+        try:
+            with open(name, "wb") as f:
+                f.write(m)
+        except OSError as e:
+            raise SystemExit(f"写不出 {name}\n{e}") from e
         print(f"wrote {name}  ({len(m)} bytes)")
 
     print(f"\n  编制: {ens.get('name','')}  座位 {len(parts)}")

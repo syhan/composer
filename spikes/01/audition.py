@@ -31,7 +31,6 @@ import tempfile
 import wave
 
 import numpy as np
-import yaml
 
 import audio as audio_mod
 import render
@@ -42,7 +41,7 @@ GAP = 0.35          # 两版之间的静默，够耳朵切换，又不会让人�
 # ---------- 载入 ----------
 
 def load(path):
-    spec = yaml.safe_load(open(path))
+    spec = render.load_yaml(path, "spec")
     _ens, insts = render.load_ensemble(spec, path)
     bars, parts, tracks, warns = render.expand(spec, insts)
     bars = render.autoplace(bars, parts, spec["meta"]["grid"])
@@ -68,21 +67,19 @@ def bar_seconds(spec):
 # ---------- WAV ----------
 
 def read_wav(path):
-    w = wave.open(path)
-    n, ch, sr = w.getnframes(), w.getnchannels(), w.getframerate()
-    x = np.frombuffer(w.readframes(n), dtype="<i2").reshape(-1, ch)
-    w.close()
+    with wave.open(path) as w:
+        n, ch, sr = w.getnframes(), w.getnchannels(), w.getframerate()
+        x = np.frombuffer(w.readframes(n), dtype="<i2").reshape(-1, ch)
     return x, sr
 
 
 def write_wav(path, x, sr):
     x = x if x.ndim == 2 else x.reshape(-1, 1)
-    w = wave.open(path, "wb")
-    w.setnchannels(x.shape[1])
-    w.setsampwidth(2)
-    w.setframerate(sr)
-    w.writeframes(x.astype("<i2").tobytes())
-    w.close()
+    with wave.open(path, "wb") as w:
+        w.setnchannels(x.shape[1])
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(x.astype("<i2").tobytes())
     return path
 
 
@@ -94,13 +91,18 @@ def render_version(v, bars, lo, hi, engine, tmpdir, tag):
     sub = {b: bars.get(b, []) for b in range(lo, hi + 1)}
     mid = os.path.join(tmpdir, f"{tag}.mid")
     wav = os.path.join(tmpdir, f"{tag}.wav")
-    open(mid, "wb").write(render.build_midi(spec, sub, v["parts"], first=lo))
+    data = render.build_midi(spec, sub, v["parts"], first=lo)
+    try:
+        with open(mid, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        raise SystemExit(f"写不出 MIDI: {mid}\n{e}") from e
 
     if engine == "gm":
         try:
             audio_mod.render_gm(mid, wav)
             return wav
-        except Exception as e:
+        except audio_mod.GM_FAILURES as e:
             print(f"  ! gm 不可用（{e}），回落到 synth", file=sys.stderr)
             engine = "synth"
     # synth 只能整曲渲，反正它本来就是全谱
@@ -109,7 +111,7 @@ def render_version(v, bars, lo, hi, engine, tmpdir, tag):
 
 
 def take(x, sr, t0, t1):
-    a, b = int(round(t0 * sr)), int(round(t1 * sr))
+    a, b = round(t0 * sr), round(t1 * sr)
     a, b = max(0, a), min(len(x), b)
     return x[a:b]
 
@@ -160,7 +162,7 @@ def event_diff(ba, bb):
         per_part[pid]["add"] = per_part[pid].get("add", 0) + len(add)
         per_part[pid]["rem"] = per_part[pid].get("rem", 0) + len(rem)
         # 中位音程（同一小节内同时发声的音）最能说明"挤不挤"
-        for tag, evs, key in (("a", pa, "med_a"), ("b", pb, "med_b")):
+        for _tag, evs, key in (("a", pa, "med_a"), ("b", pb, "med_b")):
             iv = [max(p) - min(p) for (_s, _d, p, _v) in evs if len(p) > 1]
             if iv:
                 per_part[pid].setdefault(key, []).extend(iv)
@@ -231,7 +233,7 @@ def play(path, seconds, timeout=30):
         try:
             subprocess.run([exe] + cmd[1:] + [path], stdin=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           timeout=timeout)
+                           timeout=timeout, check=False)
             return cmd[0]
         except subprocess.TimeoutExpired:
             print(f"  ! {cmd[0]} 没有响应（音频服务可能卡住了）。"
@@ -294,9 +296,7 @@ def main():
     lo = max(1, start - 1)                  # preroll：保住从前一小节拖过来的音
     if o["engine"] == "synth":
         lo = 1                              # synth 只能整曲渲
-    spb = bar_seconds(spec0)
 
-    names = [os.path.basename(v["path"]) for v in versions]
     order = list(range(len(versions)))          # 播放顺序，元素是 versions 的下标
     if o["blind"]:
         np.random.default_rng().shuffle(order)
@@ -306,17 +306,23 @@ def main():
     tmpdir = tempfile.mkdtemp(prefix="audition-")
     try:
         chunks, curves, used_engine = [], [], o["engine"]
+        sr = 0                                  # 由第一版渲染决定；后面必须一致
         for k, v in enumerate(seq):
             bars = focus(v["bars"], o["solo"], o["mute"])
             wav = render_version(v, bars, lo, hi=end, engine=o["engine"],
                                  tmpdir=tmpdir, tag=f"v{k}")
-            x, sr = read_wav(wav)
+            x, sr_k = read_wav(wav)
+            if sr and sr_k != sr:               # 采样率不一致就没法拼成一条时间轴
+                raise SystemExit(f"采样率不一致：{sr} vs {sr_k}（{v['path']}）")
+            sr = sr_k
             vspb = bar_seconds(v["spec"])
             seg = take(x, sr, (start - lo) * vspb, (end - lo + 1) * vspb)
             curves.append(rms_curve(seg, sr, end - start + 1, vspb))
             if o["loop"] > 1:
                 seg = np.tile(seg, (o["loop"], 1))
             chunks.append(seg)
+        if not chunks:
+            raise SystemExit("没有可播放的候选")
         gap = np.zeros((int(GAP * sr), chunks[0].shape[1]), dtype=chunks[0].dtype)
 
         if len(chunks) == 1:
@@ -348,14 +354,15 @@ def main():
         if len(seq) > 1:
             if o["blind"]:
                 key = os.path.abspath("audition-key.txt")
-                open(key, "w").write("\n".join(
-                    f"{lab}  {os.path.basename(v['path'])}"
-                    for lab, v in zip(labels, seq)) + "\n")
+                with open(key, "w", encoding="utf-8") as f:
+                    f.write("\n".join(
+                        f"{lab}  {os.path.basename(v['path'])}"
+                        for lab, v in zip(labels, seq, strict=True)) + "\n")
                 print(f"    盲测：{len(seq)} 个候选按 {'→'.join(labels)} 播放")
                 print(f"    先听，再打开 {key}")
                 print("    （盲测时不打印 diff 与测量，否则等于提前告诉你答案）")
             else:
-                for lab, v in zip(labels, seq):
+                for lab, v in zip(labels, seq, strict=True):
                     print(f"    {lab}  {os.path.basename(v['path'])}")
                 if o["diff"]:
                     print_diff(seq[0], seq[1],
@@ -366,12 +373,13 @@ def main():
                 print("\n  量出来（描述，不是判断）")
                 head = "".join(f"{start+i:>7}" for i in range(len(curves[0])))
                 print(f"    {'bar':<8}{head}")
-                for lab, cv in zip(labels, curves):
+                for lab, cv in zip(labels, curves, strict=True):
                     print(f"    {lab+' dB':<8}" + "".join(f"{v:>7.1f}" for v in cv))
 
         print(f"\n  {out_path}")
         if o["play"]:
-            p = play(out_path, len(out) / sr)
+            dur = len(out) / sr
+            p = play(out_path, dur, timeout=int(max(30.0, dur + 20.0)))
             if p:
                 print(f"  播放器 {p}")
     finally:

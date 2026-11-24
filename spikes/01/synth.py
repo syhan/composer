@@ -6,11 +6,11 @@ spec -> 可听，全在一个 <2 秒的命令里。音色很糙，判结构够�
 """
 import sys
 import wave
+
 import numpy as np
-import yaml
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from render import expand, apply_presence, load_ensemble
+from render import apply_presence, expand, load_ensemble, load_yaml
 
 SR = 44100
 KIND = {
@@ -80,8 +80,8 @@ def drum(kind_pitch, vel):
 
 
 def render(path, out=None):
-    spec = yaml.safe_load(open(path))
-    ens, insts = load_ensemble(spec, path)
+    spec = load_yaml(path, "spec")
+    _ens, insts = load_ensemble(spec, path)
     bars, parts, _tracks, _warns = expand(spec, insts)
     bars, _ = apply_presence(spec, bars)
     kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck"))
@@ -111,7 +111,9 @@ def render(path, out=None):
     buf = buf / peak * 0.92
     out = out or path.rsplit(".", 1)[0] + ".wav"
     with wave.open(out, "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SR)
         w.writeframes((buf * 32767).astype("<i2").tobytes())
     return out
 

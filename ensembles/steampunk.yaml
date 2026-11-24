@@ -1,0 +1,17 @@
+# 编制 = 输入参数（C1）。八件全是电子 / 键盘 / 打击，**一件摇滚乐器都没有**。
+#
+# 如果加这套编制需要改一行代码，那 C1 就是假的。
+# 想验证这一点：把某个座位换成 violin，谱面应该照常渲染。
+
+id: steampunk
+name: 蒸汽机
+
+seats:
+  - {instrument: synth-pad}        # 嗡鸣 / 房间
+  - {instrument: celesta}          # 齿轮
+  - {instrument: music-box}        # 记忆
+  - {instrument: tubular-bells}    # 报时
+  - {instrument: synth-bass}       # 地板
+  - {instrument: theremin}         # 声音
+  - {instrument: synth-lead}       # 冷的那一面
+  - {instrument: drum-kit}         # 时钟

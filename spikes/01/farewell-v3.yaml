@@ -114,13 +114,13 @@ parts:
       - {bars: "5-12", pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 92,
                         also: {pitch: snare, rhythm: "----x-------x---"},
                         extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
-      - {bars: "13-15",pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 100,
+      - {bars: "13-15", pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 100,
                         also: {pitch: snare, rhythm: "----x------xx-x-"},
                         extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
       - {bars: "16",   pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 106,
                         also: {pitch: snare, rhythm: "----x---xxxx----"},
                         extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
-      - {bars: "17-22",pattern: {pitch: crash, rhythm: "x---------------"}, velocity: 112,
+      - {bars: "17-22", pattern: {pitch: crash, rhythm: "x---------------"}, velocity: 112,
                         also: {pitch: kick, rhythm: "x---x---x---x---"},
                         extra: {pitch: snare, rhythm: "----x-------x---"}}
       - {bars: "23",   pattern: {pitch: snare, rhythm: "x---x---x---x---"}, velocity: 50}
@@ -133,7 +133,7 @@ parts:
       - {bars: "1-4",  rest: true}
       - {bars: "5-8",  pattern: {pitch: root, rhythm: "x-------x-------"}, velocity: 72}
       - {bars: "9-12", pattern: {pitch: root, rhythm: "x---x---x---x---"}, velocity: 78}
-      - {bars: "13-22",pattern: {pitch: root, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 92}
+      - {bars: "13-22", pattern: {pitch: root, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 92}
       - {bars: "23",   pattern: {pitch: root, rhythm: "x---x---x---x---"}, velocity: 52}
       - {bars: "24",   pattern: {pitch: root, rhythm: "x---------------"}, velocity: 118,
                        also: {pitch: octave, rhythm: "x---------------"}}
@@ -144,7 +144,7 @@ parts:
     segments:
       - {bars: "1-2",  rest: true}
       - {bars: "3-16", pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 66}
-      - {bars: "17-22",pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 104, transpose: 12}
+      - {bars: "17-22", pattern: {pitch: nearest, rhythm: "x---------------"}, velocity: 104, transpose: 12}
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: root, rhythm: "x---------------"}, velocity: 118,
                        also: {pitch: fifth, rhythm: "x---------------"}}
@@ -154,7 +154,7 @@ parts:
     segments:
       - {bars: "1-2",  rest: true}
       - {bars: "3-16", pattern: {pitch: frame, rhythm: "x-------x-------"}, velocity: 70}
-      - {bars: "17-22",pattern: {pitch: frame, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "17-22", pattern: {pitch: frame, rhythm: "x---------------"}, velocity: 100}
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: frame, rhythm: "x---------------"}, velocity: 110}
 
@@ -163,7 +163,7 @@ parts:
     segments:
       - {bars: "1-8",  rest: true}
       - {bars: "9-16", pattern: {pitch: arp,   rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 62}
-      - {bars: "17-22",pattern: {pitch: chord, rhythm: "x-------x-------"}, velocity: 96}
+      - {bars: "17-22", pattern: {pitch: chord, rhythm: "x-------x-------"}, velocity: 96}
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: chord, rhythm: "x---------------"}, velocity: 104}
 
@@ -171,8 +171,8 @@ parts:
     base_octave: 3
     segments:
       - {bars: "1-12", rest: true}
-      - {bars: "13-16",pattern: {pitch: power, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 58}
-      - {bars: "17-22",pattern: {pitch: power, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "13-16", pattern: {pitch: power, rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 58}
+      - {bars: "17-22", pattern: {pitch: power, rhythm: "x---------------"}, velocity: 100}
       - {bars: "23",   rest: true}
       - {bars: "24",   pattern: {pitch: power, rhythm: "x---------------"}, velocity: 112}
 

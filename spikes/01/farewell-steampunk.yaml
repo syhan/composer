@@ -1,0 +1,252 @@
+# 《送别》· 蒸汽机（全长）
+#
+# 目标不是"悲伤"，是**冷**。旋律一个字没改，改的是它被什么包着。
+#
+#   1-4     启动：没有旋律。pad 嗡鸣 + 齿轮 + 时钟
+#   5-8     机器开始哼：music box 稀疏两句（v1 里它 9 小节才出现，前 30 秒太闷）
+#   9-12    机器学唱：5 3 5 反复三次，第三次记错
+#   13-16   长亭外古道边芳草碧连天 —— 人声进来，裸的
+#   17-20   晚风拂柳笛声残夕阳山外山 —— 低音进来
+#   21-24   天之涯地之角知交半零落 —— 最满
+#   25-28   一壶浊酒尽余欢今宵别梦寒 —— 和声转到 Am/G 上打转，不肯落地
+#   29-32   冷高潮：第一句整句升八度，**低音消失、人声消失、底鼓消失**
+#   33-35   上紧：5 3 5 → 6 4 6 模进
+#   36      停摆
+#   37-40   只剩齿轮 + 嗡鸣，淡出
+#
+# 三个决定性选择：
+#   1. 全曲只用空五度 [0,7]——没有三度就没有大小调色彩，只剩骨架
+#   2. 冷高潮处低音、人声、底鼓一起消失（几乎所有音乐在高潮加东西，这里反过来）
+#   3. 齿轮音型从头到尾一个音都不改；它一变，就是事件
+
+ensemble: ../../ensembles/steampunk.yaml
+
+meta:
+  title: "送别 / 蒸汽机"
+  version: v2
+  tempo: 92
+  division: 480
+  grid: 16
+  meter: [4, 4]
+
+# 空五度。没有三音，和弦不再"温暖"或"悲伤"，只剩下骨架。
+harmony:
+  - {bar:  1, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  2, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  3, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  4, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  5, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  6, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  7, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  8, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  9, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 10, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 11, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 12, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 13, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 14, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 15, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 16, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 17, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 18, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 19, name: F5,  chord: [5, 0],  bass: 5}
+  - {bar: 20, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 21, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 22, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 23, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 24, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 25, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 26, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 27, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 28, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 29, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 30, name: Am5,  chord: [9, 4],  bass: 9}
+  - {bar: 31, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 32, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 33, name: F5,  chord: [5, 0],  bass: 5}
+  - {bar: 34, name: G5,  chord: [7, 14],  bass: 7}
+  - {bar: 35, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 36, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 37, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 38, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 39, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 40, name: C5,  chord: [0, 7],  bass: 0}
+
+# 在场路径就是形式本身。
+#   21-28 最满；29-32 **没有 Synth Bass，也没有 Theremin** ——
+#   低音撤掉、人声撤掉，只剩机器在唱第一句，高八度。
+presence:
+  - {bars: "1-4",   parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells]}
+  - {bars: "5-12",  parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells, Music Box]}
+  - {bars: "13-16", parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells, Theremin]}
+  - {bars: "17-28", parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells, Theremin, Synth Bass]}
+  - {bars: "29-32", parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells, Synth Lead]}
+  - {bars: "33-35", parts: [Synth Pad, Celesta, Drum Kit, Tubular Bells, Theremin, Synth Bass]}
+  - {bars: "36",    parts: [Synth Pad, Celesta]}
+  - {bars: "37",    parts: [Synth Pad, Celesta, Tubular Bells]}
+  - {bars: "38-40", parts: [Synth Pad, Celesta]}
+
+dynamics:
+  - {bars: "1-4",   level: 0.30}
+  - {bars: "5-8",   level: 0.34}
+  - {bars: "9-12",  level: 0.40}
+  - {bars: "13-16", level: 0.46}
+  - {bars: "17-20", level: 0.54}
+  - {bars: "21-24", level: 0.64}
+  - {bars: "25-28", level: 0.72}
+  - {bars: "29-32", level: 0.58}
+  - {bars: "33-35", level: 0.66}
+  - {bars: "36",    level: 0.40}
+  - {bars: "37",    level: 0.34}
+  - {bars: "38",    level: 0.26}
+  - {bars: "39",    level: 0.19}
+  - {bars: "40",    level: 0.13}
+
+# 冷不是"小声"，是"又远又亮"。所以 29-32 混响和亮度都推到顶，
+# 音量反而降下来——听起来像从一个空房间的另一头传过来。
+color:
+  - {bars: "1-8",   reverb: [70, 95],  brightness: 45}
+  - {bars: "9-12",  reverb: 95,        brightness: 55, chorus: 40}
+  - {bars: "13-20", reverb: 85,        brightness: 60}
+  - {bars: "21-28", reverb: 80,        brightness: 55}
+  - {bars: "29-32", reverb: 120,       brightness: 95}
+  - {bars: "33-35", reverb: 110,       brightness: 80}
+  - {bars: "37-40", reverb: [120, 45], brightness: [95, 25]}
+
+material:
+  # 嗡鸣：每小节一个全音符 C3，从第 1 小节响到第 40 小节，一次不断。
+  - id: drone
+    register: 3
+    timeline:
+      - {bars: "1-40", degrees: "1:16", repeat: true}
+
+  # 齿轮：四个音，中间留空，像活塞。**全曲一个音都不改。**
+  - id: machine
+    register: 5
+    timeline:
+      - {bars: "1-40", degrees: "1:2 0:2 5,:2 0:2 1:2 0:2 5,:2 0:2", repeat: true}
+
+  # 机器学唱。第三次结尾"记错"了：升到高音 do 而不是回到 5。
+  # 这是全曲唯一的人味，也是后面冷高潮的伏笔。
+  - id: fragment
+    register: 5
+    timeline:
+      - {bars: "5",  degrees: "5:8 3:8"}      # 先只会两个音
+      - {bars: "7",  degrees: "6:8 5:8"}      # 换一句，还是两个音
+      - {bars: "9",  degrees: "5:4 3:4 5:8"}
+      - {bars: "10", degrees: "5:4 3:4 5:8"}
+      - {bars: "11", degrees: "5:4 3:4 8:8"}
+      - {bars: "12", degrees: "5:4 3:4 5:4 3:4"}
+
+  # 主题。一个字没改。（8 = 高音 do）
+  - id: melody
+    theme: true
+    pin: frozen
+    register: 4
+    timeline:
+      - {bars: "13", degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "14", degrees: "6:4 8:4 5:8"}
+      - {bars: "15", degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "16", degrees: "1:16"}
+      - {bars: "17", degrees: "5:4 3:4 5:4 8:4"}
+      - {bars: "18", degrees: "6:4 8:4 5:8"}
+      - {bars: "19", degrees: "5:4 1:2 2:2 3:2 2:2 1:4"}
+      - {bars: "20", degrees: "2:12 0:4"}
+      - {bars: "21", degrees: "5:4 3:4 5:2 8:2 7:4"}
+      - {bars: "22", degrees: "6:4 8:4 5:8"}
+      - {bars: "23", degrees: "5:4 2:4 3:2 4:2 7,:4"}
+      - {bars: "24", degrees: "1:16"}
+      - {bars: "25", degrees: "6:8 8:4 8:4"}
+      - {bars: "26", degrees: "7:4 6:4 7:4 8:4"}
+      - {bars: "27", degrees: "6:2 7:2 8:2 6:2 6:2 5:2 3:2 1:2"}
+      - {bars: "28", degrees: "2:16"}
+
+  # 冷高潮：第一句整句升八度。不是新素材，是同一条素材的八度叠置。
+  - id: melody_high
+    timeline:
+      - {bars: "29-32", use: melody, from: "13-16", op: [{octave: 1}]}
+
+  # 上紧 + 停摆
+  - id: coda
+    register: 4
+    timeline:
+      - {bars: "33", degrees: "5:4 3:4 5:8"}
+      - {bars: "34", degrees: "6:4 4:4 6:8"}     # 整体上行一级
+      - {bars: "35", degrees: "5:4 3:4 5:8"}
+      - {bars: "36", degrees: "0:16"}            # 空白。机器停了
+
+parts:
+  - instrument: synth-pad
+    base_octave: 3
+    carries:
+      - {bars: "1-40", track: drone}
+
+  - instrument: celesta
+    base_octave: 5
+    carries:
+      - {bars: "1-40", track: machine}
+
+  - instrument: music-box
+    base_octave: 5
+    carries:
+      - {bars: "5-12", track: fragment}
+
+  - instrument: tubular-bells
+    base_octave: 4
+    segments:
+      - {bars: "1",     pattern: {pitch: root, rhythm: "x---------------"}, velocity: 76}
+      - {bars: "5",     pattern: {pitch: root, rhythm: "x---------------"}, velocity: 78}
+      - {bars: "9",     pattern: {pitch: root, rhythm: "x---------------"}, velocity: 80}
+      - {bars: "13",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 82}
+      - {bars: "17",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 86}
+      - {bars: "21",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 90}
+      - {bars: "25",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 94}
+      # 冷高潮：报时变密。钟敲得越勤，房间越空
+      - {bars: "29-32", pattern: {pitch: root, rhythm: "x-------x-------"}, velocity: 96}
+      - {bars: "33",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 100}
+      - {bars: "37",    pattern: {pitch: root, rhythm: "x---------------"}, velocity: 58}
+
+  - instrument: synth-bass
+    base_octave: 2
+    segments:
+      - {bars: "17-28", pattern: {pitch: root, rhythm: "x---x---x---x---"}, velocity: 88}
+      # 29-32 故意留空：在场表里已经撤掉了，这里也不写
+      - {bars: "33-35", pattern: {pitch: root, rhythm: "x---x---x---x---"}, velocity: 92}
+
+  - instrument: theremin
+    base_octave: 4
+    carries:
+      - {bars: "13-28", track: melody}
+      - {bars: "33-35", track: coda}
+
+  - instrument: synth-lead
+    base_octave: 5
+    carries:
+      - {bars: "29-32", track: melody_high}
+
+  - instrument: drum-kit
+    segments:
+      # 时钟：先只有滴答
+      - {bars: "1-4",   pattern: {pitch: hh,    rhythm: "x---x---x---x---"}, velocity: 62}
+      - {bars: "5-8",   pattern: {pitch: hh,    rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 66,
+                        also: {pitch: kick, rhythm: "x-------x-------"}}
+      - {bars: "9-12",  pattern: {pitch: hh,    rhythm: "x-x-x-x-x-x-x-x-"}, velocity: 72,
+                        also: {pitch: kick, rhythm: "x-------x-------"},
+                        extra: {pitch: snare, rhythm: "----x-------x---"}}
+      - {bars: "13-20", pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 84,
+                        also: {pitch: snare, rhythm: "----x-------x---"},
+                        extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
+      - {bars: "21-24", pattern: {pitch: kick,  rhythm: "x---x---x---x---"}, velocity: 92,
+                        also: {pitch: snare, rhythm: "----x-------x---"},
+                        extra: {pitch: hh, rhythm: "xxxxxxxxxxxxxxxx"}}
+      # 最满：密度和重量一起上去
+      - {bars: "25-28", pattern: {pitch: kick,  rhythm: "x--x--x---x-----"}, velocity: 96,
+                        also: {pitch: snare, rhythm: "----x-------x---"},
+                        extra: {pitch: hh, rhythm: "xxxxxxxxxxxxxxxx"}}
+      # 冷高潮：只剩滴答。**底鼓和军鼓一起撤掉** ——
+      # v1 只撤低音，量出来低频几乎没掉（30.7% → 27.4%），因为撑着低频的是底鼓。
+      - {bars: "29-32", pattern: {pitch: hh,    rhythm: "xxxxxxxxxxxxxxxx"}, velocity: 74}
+      - {bars: "33-35", pattern: {pitch: kick,  rhythm: "x-------x-------"}, velocity: 84,
+                        also: {pitch: snare, rhythm: "----x-------x---"},
+                        extra: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}}
+      - {bars: "36",    rest: true}

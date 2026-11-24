@@ -8,18 +8,17 @@
 同一组数字，可能是"齐奏"也可能是"糊"——只有耳朵能分开。所以这里只描述。
 """
 import sys
-import yaml
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from render import expand, autoplace, apply_presence, load_ensemble, note_name
+from render import apply_presence, autoplace, expand, load_ensemble, load_yaml
 
 GRID = 16
 
 
 def load(path):
-    spec = yaml.safe_load(open(path))
-    ens, insts = load_ensemble(spec, path)
-    bars, parts, tracks, _warns = expand(spec, insts)
+    spec = load_yaml(path, "spec")
+    _ens, insts = load_ensemble(spec, path)
+    bars, parts, _tracks, _warns = expand(spec, insts)
     bars = autoplace(bars, parts, spec["meta"]["grid"])
     bars, _ = apply_presence(spec, bars)
     return spec, bars, parts
@@ -47,8 +46,6 @@ def salience(pb):
         d = pb[b]
         if not d:
             continue
-        allsteps = set().union(*(e["steps"] for e in d.values()))
-        allp = [x for e in d.values() for x in e["pitches"]]
         tot = sum(e["notes"] for e in d.values()) or 1
         scores = {}
         for pid, e in d.items():
@@ -71,7 +68,7 @@ def salience(pb):
 
 def pair_metrics(pb):
     agg = {}
-    for b, d in pb.items():
+    for d in pb.values():
         ids = list(d)
         for i in range(len(ids)):
             for j in range(i + 1, len(ids)):
@@ -96,7 +93,7 @@ def pair_metrics(pb):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
-    spec, bars, parts = load(path)
+    spec, bars, _parts = load(path)
     pb = per_bar(bars)
 
     print("  显著度剖面（测量，不是声明）——每小节实际最容易听到的两个")

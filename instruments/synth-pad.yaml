@@ -1,0 +1,14 @@
+id: synth-pad
+name: Synth Pad
+family: strings
+gm_program: 89          # GM 90 Pad 3 (polysynth)
+polyphonic: true
+staves: 1
+range: [36, 96]       # C2–C7
+comfort: [48, 84]       # C3–C6
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [pad, drone]
+idioms:
+  max_simultaneous: 6
+  breath: false
+  notes: "电子乐器，没有体力限制；靠混响与亮度说话"

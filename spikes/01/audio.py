@@ -36,17 +36,25 @@ import tempfile
 
 SF2 = "/usr/share/soundfonts/FluidR3_GM.sf2"
 
+# fluidsynth 失败的可预期形态。其余异常（例如代码写错）不该被"回落"吞掉——
+# 那会把一个 bug 伪装成"音源不可用"（P8）。
+GM_FAILURES = (RuntimeError, OSError, subprocess.SubprocessError)
+
 
 def render_midi(spec_path, mid_path):
     """跑一遍和 render.py 相同的管线，只留 MIDI。"""
-    import yaml
     import render
-    spec = yaml.safe_load(open(spec_path))
+    spec = render.load_yaml(spec_path, "spec")
     _ens, insts = render.load_ensemble(spec, spec_path)
     bars, parts, _tracks, _warns = render.expand(spec, insts)
     bars = render.autoplace(bars, parts, spec["meta"]["grid"])
     bars, _issues = render.apply_presence(spec, bars)
-    open(mid_path, "wb").write(render.build_midi(spec, bars, parts))
+    data = render.build_midi(spec, bars, parts)
+    try:
+        with open(mid_path, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        raise SystemExit(f"写不出 MIDI: {mid_path}\n{e}") from e
     return mid_path
 
 
@@ -83,7 +91,8 @@ def render_gm(mid_path, out_path, sf2=SF2, timeout=30, attempts=2):
                 r = subprocess.run(
                     [fs, "-a", "file", "-O", "s16", "-F", tmp, sf2, mid_path],
                     env=_isolated_env(rt), stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout,
+                    check=False)
             except subprocess.TimeoutExpired:
                 last = f"超时 {timeout}s"
                 if os.path.exists(tmp):
@@ -116,7 +125,7 @@ def render(spec_path, out_path, engine="gm"):
         render_midi(spec_path, mid)
         try:
             return render_gm(mid, out_path), "gm"
-        except Exception as e:                       # 不假装成功
+        except GM_FAILURES as e:                     # 不假装成功
             print(f"  ! gm 引擎不可用（{e}），回落到 synth", file=sys.stderr)
     return render_synth(spec_path, out_path), "synth"
 

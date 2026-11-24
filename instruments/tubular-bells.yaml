@@ -1,0 +1,14 @@
+id: tubular-bells
+name: Tubular Bells
+family: percussion
+gm_program: 14          # GM 15 Tubular Bells
+polyphonic: true
+staves: 1
+range: [48, 84]       # C3–C6
+comfort: [52, 79]       # E3–G5
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [accent, toll]
+idioms:
+  max_simultaneous: 2
+  breath: false
+  notes: "报时用；一次只敲一两下，敲多了就变成风铃"

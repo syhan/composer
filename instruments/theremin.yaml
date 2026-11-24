@@ -1,0 +1,14 @@
+id: theremin
+name: Theremin
+family: wind-synth
+gm_program: 85          # GM 86 Lead 6 (voice)
+polyphonic: false
+staves: 1
+range: [48, 96]       # C3–C7
+comfort: [55, 84]       # G3–C6
+stamina: {max_continuous_beats: 60, rest_beats: 2}
+roles: [lead, voice]
+idioms:
+  max_simultaneous: 1
+  breath: true
+  notes: "没有人吹它，但它像人声一样需要呼吸；连续太久会腻"

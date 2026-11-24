@@ -9,7 +9,6 @@
 送别的实际唱法就是这一种（"碧连~~~天"、"今宵别梦~~寒"）。
 """
 import sys
-import yaml
 
 import render
 
@@ -33,7 +32,7 @@ def notes_per_bar(track):
 
 
 def main():
-    spec = yaml.safe_load(open(sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"))
+    spec = render.load_yaml(sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml", "spec")
     theme = next(t for t in spec["material"] if t.get("theme"))
     npb = notes_per_bar(theme)
 

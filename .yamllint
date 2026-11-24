@@ -1,0 +1,15 @@
+# 谱面里的 flow mapping 是对齐着写的（- {bar: 1, name: C5, chord: [0, 7]}），
+# 一列一列对齐才看得清和声走向。默认规则会把这种对齐判成错误。
+extends: default
+rules:
+  commas:
+    max-spaces-after: -1
+  colons:
+    max-spaces-after: -1
+  braces:
+    max-spaces-inside: 1
+  document-start: disable
+  line-length: disable
+  comments-indentation: disable
+  truthy: disable
+  indentation: disable      # 续行对齐到花括号内，和上面的逗号同理

@@ -1,0 +1,14 @@
+id: synth-bass
+name: Synth Bass
+family: bass
+gm_program: 38          # GM 39 Synth Bass 1
+polyphonic: false
+staves: 1
+range: [24, 60]       # C1–C4
+comfort: [28, 55]       # E1–G3
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [bass]
+idioms:
+  max_simultaneous: 1
+  breath: false
+  notes: "单音；低音区是它的地盘"

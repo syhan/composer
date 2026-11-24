@@ -9,6 +9,21 @@
 set -u
 cd "$(dirname "$0")"
 
+# 解释器：本机 python3 有时被别的工具链遮住（例如 pi-lens 的 pip-tools venv，
+# 里面没有 PyYAML/numpy），于是所有入口都会以 ModuleNotFoundError 失败。
+# 所以这里挑一个真能 import 的，而不是盲信 PATH。
+PY=""
+for cand in python3 /usr/bin/python3 /usr/sbin/python3; do
+  if command -v "$cand" >/dev/null 2>&1 &&
+     "$cand" -c "import yaml, numpy" >/dev/null 2>&1; then
+    PY=$cand; break
+  fi
+done
+if [ -z "$PY" ]; then
+  echo "找不到带 PyYAML + numpy 的 python3。装一下：pip install pyyaml numpy" >&2
+  exit 2
+fi
+
 VERBOSE=${1:-}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -29,26 +44,37 @@ run() {
   fi
 }
 
-run "render --selftest" python3 render.py --selftest
-run "render"            python3 render.py farewell-v3.yaml
-run "synth"             python3 synth.py farewell-v3.yaml
-run "lyrics"            python3 lyrics.py farewell-v3.yaml
-run "relations"         python3 relations.py farewell-v3.yaml
-run "audio gm"          python3 audio.py farewell-v3.yaml -o "$tmp/gm.wav" --engine gm
-run "audio synth"       python3 audio.py farewell-v3.yaml -o "$tmp/sy.wav" --engine synth
-run "measure"           python3 measure.py "$tmp/gm.wav" 112 24
-run "audition 单曲"      python3 audition.py farewell-v3.yaml --bars 17-20 --loop 2 -o "$tmp/aud1.wav"
-run "audition solo"     python3 audition.py farewell-v3.yaml --bars 17-18 --solo violin -o "$tmp/aud2.wav"
-run "audition A/B"      python3 audition.py farewell-v3.yaml farewell-v3.yaml --bars 17-18 --diff -o "$tmp/aud3.wav"
-run "probe"             python3 probe.py farewell-v3.yaml --bars 17-20
-run "probe 无音频"       python3 probe.py farewell-v3.yaml --bars 17-20 --no-audio
+run "render --selftest" "$PY" render.py --selftest
+
+# 每首谱跑一遍全部入口。加了新谱就往这里加一行——
+# 一个入口只被一首谱覆盖过，等于没被覆盖（synth.py 就是这么坏掉的）。
+suite() {
+  local spec=$1 tempo=$2 nb=$3 rng=$4 solo=$5
+  local t="[$spec]"
+  run "render $t"    "$PY" render.py "$spec"
+  run "synth $t"     "$PY" synth.py "$spec"
+  run "lyrics $t"    "$PY" lyrics.py "$spec"
+  run "relations $t" "$PY" relations.py "$spec"
+  run "audio gm $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-gm.wav" --engine gm
+  run "audio sy $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-sy.wav" --engine synth
+  run "measure $t"   "$PY" measure.py "$tmp/$spec-gm.wav" "$tempo" "$nb"
+  run "audition $t"  "$PY" audition.py "$spec" --bars "$rng" --loop 2 -o "$tmp/$spec-a1.wav"
+  run "solo $t"      "$PY" audition.py "$spec" --bars "$rng" --solo "$solo" -o "$tmp/$spec-a2.wav"
+  run "A/B $t"       "$PY" audition.py "$spec" "$spec" --bars "$rng" --diff -o "$tmp/$spec-a3.wav"
+  run "probe $t"     "$PY" probe.py "$spec" --bars "$rng"
+  run "probe-n $t"   "$PY" probe.py "$spec" --bars "$rng" --no-audio
+}
+
+suite farewell-v3.yaml      112 24 17-20 violin
+# 蒸汽机版带 color: 段，probe 只渲染 21-24 —— 正好覆盖"只渲染后半段"这条路径
+suite farewell-steampunk.yaml 92 32 21-24 theremin
 
 # 音频必须真的有声音，而不是一个空壳文件
-if [ -s "$tmp/gm.wav" ]; then
-  d=$(python3 -c "
+if [ -s "$tmp/farewell-v3.yaml-gm.wav" ]; then
+  d=$("$PY" -c "
 import wave,sys
-w=wave.open('$tmp/gm.wav'); print(round(w.getnframes()/w.getframerate(),1))")
-  echo "  · gm.wav 时长 ${d}s"
+w=wave.open('$tmp/farewell-v3.yaml-gm.wav'); print(round(w.getnframes()/w.getframerate(),1))")
+  echo "  · v3 gm.wav 时长 ${d}s"
 else
   echo "  ✗ gm.wav 不存在"; fail=1
 fi

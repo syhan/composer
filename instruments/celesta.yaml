@@ -1,0 +1,14 @@
+id: celesta
+name: Celesta
+family: keyboard
+gm_program: 8           # GM 9 Celesta
+polyphonic: true
+staves: 1
+range: [60, 96]       # C4–C7
+comfort: [65, 93]       # F4–A6
+stamina: {max_continuous_beats: 240, rest_beats: 0}
+roles: [ostinato, clock]
+idioms:
+  max_simultaneous: 4
+  breath: false
+  notes: "齿轮声：适合十六分音型，不适合长音"

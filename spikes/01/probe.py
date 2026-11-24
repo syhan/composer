@@ -18,12 +18,8 @@ import os
 import shutil
 import sys
 import tempfile
-import wave
 
 import numpy as np
-import yaml
-
-import render
 
 NAME = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 BANDS = [(20, 80), (80, 160), (160, 320), (320, 640),

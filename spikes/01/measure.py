@@ -7,13 +7,14 @@
 """
 import sys
 import wave
+
 import numpy as np
 
 
 def load(path):
-    w = wave.open(path)
-    sr, nch = w.getframerate(), w.getnchannels()
-    x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32768
+    with wave.open(path) as w:
+        sr, nch = w.getframerate(), w.getnchannels()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32768
     return x.reshape(-1, nch).mean(axis=1), sr
 
 
