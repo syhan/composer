@@ -63,6 +63,11 @@ suite() {
   run "A/B $t"       "$PY" audition.py "$spec" "$spec" --bars "$rng" --diff -o "$tmp/$spec-a3.wav"
   run "probe $t"     "$PY" probe.py "$spec" --bars "$rng"
   run "probe-n $t"   "$PY" probe.py "$spec" --bars "$rng" --no-audio
+  run "follow $t"    "$PY" follow.py "$spec" --no-audio --draw
+  # --keys 走的就是交互模式用的那个 step()，所以这两行测的是真路径，
+  # 不是另写一条测试专用的小路。
+  run "follow-k $t"  "$PY" follow.py "$spec" --no-audio \
+      --keys "fast-right,[,fast-right,],l,right,left,fast-left"
 }
 
 suite farewell-v3.yaml      17-20 violin

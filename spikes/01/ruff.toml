@@ -1,0 +1,12 @@
+# 让 isort 知道哪些是本地模块。
+#
+# 没有这份配置时，`import audio` 的分类取决于**从哪个目录跑 ruff**：
+# 在 spikes/01 里跑是 first-party，在仓库根跑就变成 third-party，
+# 于是同一行 import 在两种调用下要排到不同位置，永远有一边报 I001。
+line-length = 100
+
+[lint.isort]
+known-first-party = [
+  "audio", "audition", "follow", "lyrics", "measure",
+  "probe", "relations", "render", "synth",
+]
