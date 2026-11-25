@@ -1,0 +1,141 @@
+# 拍号自检谱：同一句旋律，三种拍号。
+#
+# 这不是一首"作品"，是一个**能听出来的测量**：
+#   1-4    4/4      格子 16   一小节 1920 tick
+#   5-8    7/8 [2,2,3]  格子 28   一小节 1680 tick
+#   9-12   5/4 [3,2]    格子 20   一小节 2400 tick
+#
+# 为什么非要一段真谱，而不是只写单元测试：
+# `--selftest` 能验 tick 和格子数，验不了"歌听起来对不对"。
+# 拍号一错，最典型的症状不是报错，是**后半小节空掉**——
+# 那只有耳朵听得出来（C18：能测的不等于重要的）。
+#
+# 听什么：
+#   5-8 的 7/8 是 [2,2,3] 分组，所以重音落在 1 / 3 / 5 格，
+#   最后一组三格是"瘸"的那一下。如果听起来像 4/4 被截短，
+#   说明分组没进音轨（现在它只进网格和校验，不进 MIDI——
+#   MIDI 的拍号 meta 表达不了 group，这是已知缺口）。
+
+ensemble: ../../ensembles/steampunk.yaml
+
+meta:
+  title: "拍号自检 / 7:8"
+  version: v1
+  tempo: 100
+  division: 480
+  subdivision: 4                 # 每拍切 4 刀；格子数由 beats × subdivision 推导
+  meter:
+    - {bar: 1, beats: 4, unit: 4}
+    - {bar: 5, beats: 7, unit: 8, group: [2, 2, 3]}
+    - {bar: 9, beats: 5, unit: 4, group: [3, 2]}
+
+harmony:
+  - {bar:  1, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  2, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  3, name: Am5, chord: [9, 4],  bass: 9}
+  - {bar:  4, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  5, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar:  6, name: Am5, chord: [9, 4],  bass: 9}
+  - {bar:  7, name: F5,  chord: [5, 0],  bass: 5}
+  - {bar:  8, name: G5,  chord: [7, 14], bass: 7}
+  - {bar:  9, name: C5,  chord: [0, 7],  bass: 0}
+  - {bar: 10, name: Am5, chord: [9, 4],  bass: 9}
+  - {bar: 11, name: F5,  chord: [5, 0],  bass: 5}
+  - {bar: 12, name: G5,  chord: [7, 14], bass: 7}
+
+presence:
+  - {bars: "1-4",   parts: [Synth Pad, Celesta, Drum Kit]}
+  - {bars: "5-8",   parts: [Synth Pad, Celesta, Drum Kit, Theremin]}
+  - {bars: "9-12",  parts: [Synth Pad, Celesta, Drum Kit, Theremin, Synth Bass, Synth Lead, Tubular Bells]}
+
+dynamics:
+  - {bars: "1-4",  level: 0.40}
+  - {bars: "5-8",  level: 0.58}
+  - {bars: "9-12", level: 0.72}
+
+color:
+  - {bars: "1-4",  reverb: 60, brightness: 50}
+  - {bars: "5-8",  reverb: 75, brightness: 65}
+  - {bars: "9-12", reverb: 90, brightness: 80}
+
+material:
+  # 嗡鸣：格子数变了，全音符的长度也得跟着写（16 / 28 / 20 格）。
+  - id: drone
+    register: 3
+    timeline:
+      - {bars: "1-4",  degrees: "1:16", repeat: true}
+      - {bars: "5-8",  degrees: "1:28", repeat: true}
+      - {bars: "9-12", degrees: "1:20", repeat: true}
+
+  # 同一句旋律，三种写法。不是"自动重排"——是**人**把它塞进新拍号里的，
+  # 因为 7/8 里"5 3 5"该占几格，本身就是一个音乐决定，不是一个算术决定。
+  - id: tune
+    theme: true
+    pin: frozen
+    register: 4
+    timeline:
+      - {bars: "1-4",   degrees: "5:4 3:4 5:2 8:2 7:4 6:4 8:4 5:8 5:4 2:4 3:2 4:2 7,:4 1:16"}
+      - {bars: "5-8",   degrees: "5:4 3:4 5:4 8:4 7:4 5:4 3:4 6:4 8:4 5:4 8:4 5:12 5:4 2:4 3:4 4:4 7,:4 3:4 2:4 1:28"}
+      - {bars: "9-12",  degrees: "5:4 3:4 5:2 8:2 7:4 6:4 8:4 5:8 3:4 5:4 5:4 2:4 3:2 4:2 7,:4 2:4 1:20"}
+
+  # 跨拍号的血缘：把 4/4 的那句（4 × 16 格 = 7680 tick）搬到 5/4 上
+  # （4 × 20 格 = 9600 tick）。变换是纯音区位移，所以 tick 位置原样保留：
+  # 它只填到 7680，剩下的 1920 tick（3 小节 + 4 格）就是静默。
+  # 这是正确行为，不是 bug：**素材长度和格子数是两件事**。
+  # 自动把句子拉长去填满，是一个音乐决定，不该由算术替人做。
+  - id: tune_up
+    timeline:
+      - {bars: "9-12", use: tune, from: "1-4", op: [{octave: 1}]}
+
+parts:
+  - instrument: synth-pad
+    base_octave: 3
+    carries:
+      - {bars: "1-12", track: drone}
+
+  # 齿轮：格子数一变，音型就真的不一样了。这是唯一"听得出来"的地方。
+  - instrument: celesta
+    base_octave: 5
+    segments:
+      - {bars: "1-4",   pattern: {pitch: "power", rhythm: "x-------x-------"}, velocity: 66}
+      - {bars: "5-8",   pattern: {pitch: "power", rhythm: "x-----x-----x-------x-------"}, velocity: 70}
+      - {bars: "9-12",  pattern: {pitch: "power", rhythm: "x-------x-------x---"}, velocity: 74}
+
+  - instrument: theremin
+    base_octave: 4
+    carries:
+      - {bars: "5-12", track: tune}
+
+  - instrument: synth-lead
+    base_octave: 5
+    carries:
+      - {bars: "9-12", track: tune_up}
+
+  - instrument: synth-bass
+    base_octave: 2
+    segments:
+      - {bars: "9-12", pattern: {pitch: root, rhythm: "x---x---x---x---x---"}, velocity: 88}
+
+  - instrument: tubular-bells
+    base_octave: 4
+    segments:
+      - {bars: "9", pattern: {pitch: root, rhythm: "x-------------------"}, velocity: 84}
+
+  # 鼓：三种格子长度各写一遍。写错了会立刻报"节奏串有 N 格，这一小节要 M 格"。
+  # `also:` 是同一段的第二条音轨（底鼓），不是另一段——
+  # 写成两段会报"段落重叠"，那是对的：两段抢同一小节本来就说不清谁赢。
+  - instrument: drum-kit
+    segments:
+      - bars: "1-4"
+        pattern: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-"}
+        also: {pitch: kick, rhythm: "x-------x-------"}
+        velocity: 64
+      # 7/8 的 [2,2,3]：底鼓落在 1 / 3 / 5 格，最后一组空着——"瘸"的那一下
+      - bars: "5-8"
+        pattern: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-x-x-x-x-x-x-"}
+        also: {pitch: kick, rhythm: "x---x---x-------x---x---x---"}
+        velocity: 92
+      - bars: "9-12"
+        pattern: {pitch: hh, rhythm: "x-x-x-x-x-x-x-x-x-x-"}
+        also: {pitch: kick, rhythm: "x-------x---x-------"}
+        velocity: 72

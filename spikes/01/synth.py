@@ -10,7 +10,7 @@ import wave
 import numpy as np
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from render import apply_presence, expand, load_ensemble, load_yaml
+from render import apply_presence, expand, load_ensemble, load_yaml, meter_of
 
 SR = 44100
 KIND = {
@@ -82,29 +82,31 @@ def drum(kind_pitch, vel):
 def render(path, out=None):
     spec = load_yaml(path, "spec")
     _ens, insts = load_ensemble(spec, path)
-    bars, parts, _tracks, _warns = expand(spec, insts)
+    meter = meter_of(spec)
+    bars, parts, _tracks, _warns = expand(spec, insts, meter)
     bars, _ = apply_presence(spec, bars)
     kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck"))
                for p in parts}
-    tempo, grid = spec["meta"]["tempo"], spec["meta"]["grid"]
-    total_bars = len(spec["harmony"])
-    step = (60.0 / tempo) / (grid / spec["meta"]["meter"][0])
+    # 一个 tick 几秒：全曲常数。但“一格”多长、“一小节”多长都不是，只能逐小节查。
+    sec = 60.0 / (spec["meta"]["tempo"] * spec["meta"]["division"])
 
-    total = int(total_bars * grid * step * SR) + SR
+    total = int(sum(b.ticks for b in meter.all()) * sec * SR) + SR
     buf = np.zeros(total)
 
     for b in sorted(bars):
+        bar = meter[b]
         for (part, st, du, pitches, vel) in bars[b]:
-            t0 = int(((b - 1) * grid + st) * step * SR)
+            t0 = int((bar.start_tick + st * bar.step_ticks) * sec * SR)
             kind = kind_of.get(part["id"], "pluck")
             if part.get("drum"):
                 for p in pitches:
                     seg = drum(p, vel)
                     buf[t0:t0 + len(seg)] += seg[:max(0, total - t0)]
             else:
+                dur = du * bar.step_ticks * sec
                 for p in pitches:
                     f = 440.0 * 2 ** ((p - 69) / 12)
-                    seg = voice(kind, f, du * step * 1.02, vel)
+                    seg = voice(kind, f, dur * 1.02, vel)
                     buf[t0:t0 + len(seg)] += seg[:max(0, total - t0)] * 0.22
 
     peak = np.max(np.abs(buf)) or 1.0

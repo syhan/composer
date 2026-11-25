@@ -4,6 +4,7 @@
 编制是输入（ensembles/*.yaml + instruments/*.yaml），不是代码里的常量。
 除 PyYAML 外零依赖：内环必须能 headless 跑，2 秒内出声。
 """
+import bisect
 import itertools
 import os
 import sys
@@ -76,6 +77,155 @@ def parse_bars(spec, total):
     return [int(s)]
 
 
+# ---------- 拍号：小节是有长度的坐标，不是序号 ----------
+# 4/4 里 `tick = (bar - 1) * grid * tps` 恒成立，所以写死了也没人发现。
+# 一旦有 7/8 这个等式就是错的——这不是加复杂度，是把一条假等式删掉。
+
+UNITS = (2, 4, 8, 16)          # 拍号分母：MIDI 只能表示 2 的幂
+
+
+class Bar:
+    """一小节的绝对时间坐标。拍号变了，长度和步长都跟着变。"""
+
+    # 不按字母排：这个顺序是“时间 → 拍号 → 推导量”，读的时候能顺着算一遍。
+    __slots__ = (  # noqa: RUF023
+        "index", "start_tick", "ticks", "beats", "unit",
+        "grid", "step_ticks", "eighth", "group")
+
+    def __init__(self, index, start_tick, beats, unit, grid, step_ticks, eighth, group):
+        self.index = index
+        self.start_tick = start_tick
+        self.beats = beats
+        self.unit = unit
+        self.grid = grid                 # 格子数 = beats * subdivision
+        self.step_ticks = step_ticks     # 一格多少 tick
+        self.ticks = grid * step_ticks   # 一小节多少 tick（推导，不写死）
+        self.eighth = eighth             # 一个八分音符占几格（arp 之类要用）
+        self.group = group               # 小节内分组 [3, 2, 3]，没有就是 None
+
+    def __repr__(self):
+        return f"<bar {self.index} {self.beats}/{self.unit} @{self.start_tick}>"
+
+
+class Meter:
+    """全曲时间坐标。按小节号、按 tick、按秒都查得到——时间的唯一真源。"""
+
+    def __init__(self, bars, tempo=None, division=None):
+        self.bars = bars
+        self._starts = [b.start_tick for b in bars]
+        self.tempo = tempo
+        self.division = division
+
+    def __len__(self):
+        return len(self.bars)
+
+    def __contains__(self, index):
+        return isinstance(index, int) and 1 <= index <= len(self.bars)
+
+    def __getitem__(self, index):
+        if not 1 <= index <= len(self.bars):
+            raise SystemExit(f"第 {index} 小节不存在（全曲 {len(self.bars)} 小节）")
+        return self.bars[index - 1]
+
+    def all(self):
+        return list(self.bars)
+
+    def at_tick(self, tick):
+        i = bisect.bisect_right(self._starts, tick) - 1
+        if i < 0:
+            raise SystemExit(f"tick {tick} 落在第 1 小节之前")
+        return self.bars[i]
+
+    # --- 秒 ---
+    # 小节的秒数不是常数（7/8 比 4/4 短），所以“第 n 小节在几秒”只能累加 tick。
+    def _spb(self):
+        if not self.tempo or not self.division:
+            raise SystemExit("Meter 没有 tempo/division，算不了秒")
+        return 60.0 / (self.tempo * self.division)
+
+    def secs(self, bar):
+        """第 bar 小节起点的秒数（从第 1 小节算）。"""
+        return self[bar].start_tick * self._spb()
+
+    def bar_secs(self, bar):
+        """第 bar 小节的秒数。"""
+        return self[bar].ticks * self._spb()
+
+    def total_secs(self):
+        """全曲总长（乐谱长度，不含渲染尾音）。"""
+        return sum(b.ticks for b in self.bars) * self._spb()
+
+
+def meter_of(spec):
+    """把 meta.meter 段落展开成 Meter。网格和 tick 全是推导的，不手写。"""
+    meta = spec["meta"]
+    total = len(spec["harmony"])
+    div = int(meta["division"])
+    sub = int(meta.get("subdivision", 4))
+    if sub < 1:
+        raise SystemExit(f"meta.subdivision={sub} 必须 ≥ 1")
+    if div % sub:
+        raise SystemExit(f"meta.division={div} 不能被 subdivision={sub} 整除")
+    segs = meta.get("meter") or [{"bar": 1, "beats": 4, "unit": 4}]
+    if (isinstance(segs, list) and len(segs) == 2
+            and all(isinstance(x, int) for x in segs)):
+        # 旧写法 meter: [4, 4] —— 只能表达单一拍号，等价于一段。
+        segs = [{"bar": 1, "beats": segs[0], "unit": segs[1]}]
+    if not isinstance(segs, list) or not all(isinstance(s, dict) for s in segs):
+        raise SystemExit(
+            f"meta.meter 要是一串段落，比如 [{{bar: 1, beats: 4, unit: 4}}]，"
+            f"拿到 {segs!r}。只写一行会被当成 dict。")
+
+    blocks = []
+    for seg in segs:
+        for key in ("bar", "beats", "unit"):
+            if key not in seg:
+                raise SystemExit(f"拍号段落缺 {key}: {seg}")
+        b0, beats, unit = int(seg["bar"]), int(seg["beats"]), int(seg["unit"])
+        if unit not in UNITS:
+            raise SystemExit(f"bar {b0}: unit={unit} 不合法（MIDI 的拍号分母只能是 {UNITS}）")
+        if beats < 1:
+            raise SystemExit(f"bar {b0}: beats={beats} 必须 ≥ 1")
+        if div * 4 % (unit * sub):
+            raise SystemExit(
+                f"bar {b0}: division={div} 表示不了 {beats}/{unit} 的第 {sub} 刀"
+                f"——{div * 4} 不能被 {unit * sub} 整除。换 division 或 subdivision。")
+        group = seg.get("group")
+        if group is not None:
+            if not isinstance(group, list) or any(
+                    not isinstance(g, int) or g < 1 for g in group):
+                raise SystemExit(f"bar {b0}: group={group!r} 要是正整数的列表，比如 [3, 2, 3]")
+            if sum(group) != beats:
+                raise SystemExit(
+                    f"bar {b0}: group {group} 加起来是 {sum(group)} 拍，但这一小节有 {beats} 拍")
+        step = div * 4 // (unit * sub)
+        blocks.append((b0, beats, unit, group, step, beats * sub, max(1, (div // 2) // step)))
+
+    if blocks[0][0] != 1:
+        raise SystemExit(f"拍号必须从第 1 小节开始，第一段写的是 bar {blocks[0][0]}")
+    for i in range(1, len(blocks)):
+        if blocks[i][0] <= blocks[i - 1][0]:
+            raise SystemExit(
+                f"拍号段落顺序不对或重叠：bar {blocks[i][0]} 排在 bar {blocks[i - 1][0]} 之后")
+
+    out, tick = [], 0
+    for i, (b0, beats, unit, group, step, grid, eighth) in enumerate(blocks):
+        if b0 > total:
+            raise SystemExit(f"拍号段落 bar {b0} 超出了全曲 {total} 小节")
+        b1 = blocks[i + 1][0] - 1 if i + 1 < len(blocks) else total
+        for b in range(b0, b1 + 1):
+            out.append(Bar(b, tick, beats, unit, grid, step, eighth, group))
+            tick += grid * step
+    # 旧谱里写的 grid 现在是推导出来的。对不上就说明它还藏着别的意思，不能装没看见。
+    if "grid" in meta:
+        grids = sorted({b.grid for b in out})
+        if grids != [int(meta["grid"])]:
+            raise SystemExit(
+                f"meta.grid={meta['grid']} 和推导出来的格子数 {grids} 不一致——"
+                f"grid 现在由 beats × subdivision 推导，删掉它（或改 subdivision）")
+    return Meter(out, tempo=int(meta["tempo"]), division=div)
+
+
 def chord_at(harmony, bar):
     for h in harmony:
         if h["bar"] == bar:
@@ -129,12 +279,24 @@ def resolve(pitch, h, part, prev=None):
     raise ValueError(pitch)
 
 
-def onsets(rhythm, grid):
-    return [i for i, c in enumerate((rhythm + "-" * grid)[:grid]) if c == "x"]
+def onsets(rhythm, grid, where="节奏串"):
+    """节奏串的长度必须正好等于这一小节的格子数。
+
+    以前是 (rhythm + "-" * grid)[:grid]：短了补齐、长了截断，一声不响。
+    统一网格下只是烦人；每小节网格不同之后，它会变成“后半小节全空”而且不报错。
+    """
+    if len(rhythm) != grid:
+        raise SystemExit(
+            f"{where}: 节奏串 {rhythm!r} 有 {len(rhythm)} 格，这一小节要 {grid} 格"
+            f"（Diff 用 '-' 补齐或删短）")
+    bad = sorted(set(rhythm) - set("xX-."))
+    if bad:
+        raise SystemExit(f"{where}: 节奏串里有不认识的字符 {bad}（只认 x / - / .）")
+    return [i for i, c in enumerate(rhythm) if c in "xX"]
 
 
-def runs(rhythm, grid):
-    ons = onsets(rhythm, grid)
+def runs(rhythm, grid, where="节奏串"):
+    ons = onsets(rhythm, grid, where)
     return [(o, (ons[i + 1] if i + 1 < len(ons) else grid) - o) for i, o in enumerate(ons)]
 
 
@@ -198,12 +360,15 @@ def _augment(seq, k):
     return [(a * k, d * k, ps, v) for (a, d, ps, v) in seq]
 
 
-def _diminish(seq, k):
+def _diminish(seq, k, step=1):
     k = _int_arg("diminish", k)
     out = []
     for (a, d, ps, v) in seq:
-        if a % k or d % k:
-            raise SystemExit(f"diminish:{k} 在 {a}:{d} 上除不尽——网格太粗，这个变换写不出来")
+        # 除不尽指的是**格数**除不尽，不是 tick 数——tick 总是能被小整数整除，
+        # 光看 tick 会把这个拒绝变成“总能通过”，静默产生网格外的音。
+        if (a // step) % k or (d // step) % k:
+            raise SystemExit(f"diminish:{k} 在 {a // step}:{d // step} 格上除不尽——"
+                             f"网格太粗，这个变换写不出来")
         out.append((a // k, d // k, ps, v))
     return out
 
@@ -238,13 +403,16 @@ OPS = {"octave": _octave, "transpose": _transpose, "retrograde": _retrograde,
        "fragment": _fragment, "sequence": _sequence}
 
 
-def apply_ops(seq, ops):
-    """从左到右依次作用。顺序有意义：先 fragment 后 retrograde ≠ 反过来。"""
+def apply_ops(seq, ops, step=1):
+    """从左到右依次作用。顺序有意义：先 fragment 后 retrograde ≠ 反过来。
+
+    step 是源的格宽（tick/格）：序列已经用 tick 表示，只有 diminish 需要它来判断“除不尽”。
+    """
     for name, arg in _pairs(ops or []):
         fn = OPS.get(name)
         if fn is None:
             raise SystemExit(f"未知变换 {name!r}（可用: {', '.join(sorted(OPS))}）")
-        seq = fn(seq, arg)
+        seq = fn(seq, arg, step) if name == "diminish" else fn(seq, arg)
     return seq
 
 
@@ -261,29 +429,45 @@ def op_shift(ops):
     return semis, pure
 
 
-def build_material(spec):
+def _bar_span(meter, target, end):
+    """从 target[0] 起，装下 end 个 tick 需要几个小节。"""
+    base = meter[target[0]].start_tick
+    for i, b in enumerate(target):
+        if meter[b].start_tick + meter[b].ticks >= base + end:
+            return i + 1
+    return len(target)
+
+
+def build_material(spec, meter):
     """素材轨：与声部无关的时间线。轨不知道自己由谁演奏。
 
-    每个 timeline 段先展开成一条**扁平序列**（绝对步数），再过变换链，
+    每个 timeline 段先展开成一条**扁平序列**（绝对 tick），再过变换链，
     最后重新分配到小节。扁平化是必须的：倒影/扩增跨小节，逐小节做不了。
+    用 tick 而不是格数也是必须的：格数只在单一拍号里可比。
     """
-    grid = spec["meta"]["grid"]
     tracks, warns = {}, []
     for tr in spec.get("material") or []:
         reg = tr.get("register", 4)
         ev, lineage = {}, []
         for seg in tr["timeline"]:
             target = parse_bars(seg["bars"], None)
-            start_bar = target[0]
+            start = meter[target[0]]
             ops = seg.get("op") or []
+            grids = sorted({meter[b].grid for b in target})
+            if len(grids) > 1 and ("degrees" in seg or seg.get("repeat")):
+                what = "用 repeat 的" if seg.get("repeat") else "写 degrees 的"
+                raise SystemExit(
+                    f"素材 {tr['id']} {seg['bars']}: 这段跨了不同拍号（格子数 {grids}）——"
+                    f"{what}段只能落在同一种拍号里，请拆成两段")
 
             if "use" in seg:
                 src = tracks.get(seg["use"])
                 if src is None:
                     raise SystemExit(f"素材 {tr['id']} 引用了尚未定义的轨 {seg['use']}")
                 src_bars = parse_bars(seg.get("from", seg["bars"]), None)
-                base = src_bars[0]
-                seq = [((b - base) * grid + st, du, ps, v)
+                sbase = meter[src_bars[0]].start_tick
+                seq = [((meter[b].start_tick - sbase) + st * meter[b].step_ticks,
+                        du * meter[b].step_ticks, ps, v)
                        for b in src_bars for (st, du, ps, v) in src["events"].get(b, [])]
                 semis, pure = op_shift(ops)
                 lineage.append({"from": seg["use"], "from_bars": seg.get("from", seg["bars"]),
@@ -297,27 +481,28 @@ def build_material(spec):
                     while deg_s and deg_s[-1] in "'\u2019,":
                         shift += 7 if deg_s[-1] in "'\u2019" else -7
                         deg_s = deg_s[:-1]
+                    span = int(dur) * start.step_ticks
                     if int(deg_s) == 0:            # 0 = 休止：只推进时间
-                        step += int(dur)
+                        step += span
                         continue
-                    seq.append((step, int(dur), [scale_degree(int(deg_s) + shift, reg)],
+                    seq.append((step, span, [scale_degree(int(deg_s) + shift, reg)],
                                 seg.get("velocity", 80)))
-                    step += int(dur)
+                    step += span
                 if seg.get("repeat"):
                     # 一小节素材，逐小节重复（嗡鸣、固定音型）。
                     # 没有这一条就只能写 32 行一模一样的时间线。
-                    seq = [(a + (b - start_bar) * grid, du, ps, v)
+                    seq = [(a + (meter[b].start_tick - start.start_tick), du, ps, v)
                            for b in target for (a, du, ps, v) in seq]
                 lineage.append({"from": None, "from_bars": None, "bars": seg["bars"],
                                 "ops": ops, "semitones": 0, "pure": False, "tonal": False})
             else:
                 raise SystemExit(f"素材 {tr['id']} 的 timeline 段既无 degrees 也无 use: {seg}")
 
-            seq = apply_ops(seq, ops)
+            seq = apply_ops(seq, ops, start.step_ticks)
 
             # 变换会改变长度：装不下就报，不要默默截断（C14）
             if seq:
-                need = -(-max(a + d for a, d, _p, _v in seq) // grid)
+                need = _bar_span(meter, target, max(a + d for a, d, _p, _v in seq))
                 if need > len(target):
                     raise SystemExit(
                         f"素材 {tr['id']} {seg['bars']}: 变换后需要 {need} 小节，"
@@ -325,22 +510,30 @@ def build_material(spec):
                 if need < len(target):
                     warns.append(f"素材 {tr['id']} {seg['bars']}: 变换只填满 {need}/{len(target)} 小节，"
                                  f"其余为静默")
+            base = start.start_tick
             for (a, du, ps, v) in seq:
                 if a < 0:
                     raise SystemExit(f"素材 {tr['id']} {seg['bars']}: 变换产生了负位置")
-                ev.setdefault(start_bar + a // grid, []).append((a % grid, du, ps, v))
+                bar = meter.at_tick(base + a)
+                off = base + a - bar.start_tick
+                if off % bar.step_ticks or du % bar.step_ticks:
+                    raise SystemExit(
+                        f"素材 {tr['id']} {seg['bars']}: 落在 bar {bar.index}"
+                        f"（{bar.beats}/{bar.unit}，一格 {bar.step_ticks} tick）上的音不在格上"
+                        f"（偏移 {off}、时值 {du} tick）")
+                ev.setdefault(bar.index, []).append(
+                    (off // bar.step_ticks, du // bar.step_ticks, ps, v))
 
         tracks[tr["id"]] = {"register": reg, "events": ev,
                              "theme": bool(tr.get("theme")), "lineage": lineage}
     return tracks, warns
 
 
-def expand(spec, insts):
-    grid = spec["meta"]["grid"]
+def expand(spec, insts, meter):
     total = len(spec["harmony"])
     harmony = spec["harmony"]
     bars = {}
-    tracks, mat_warns = build_material(spec)
+    tracks, mat_warns = build_material(spec, meter)
 
     parts = []
     for ps in spec["parts"]:
@@ -378,6 +571,8 @@ def expand(spec, insts):
 
             for b in blist:
                 h = chord_at(harmony, b)
+                bar = meter[b]
+                where = f"{part['name']} bar {b}"
                 vel, tr = seg.get("velocity", 80), seg.get("transpose", 0)
                 evs = []
                 if "degrees" in seg:
@@ -394,6 +589,10 @@ def expand(spec, insts):
                         evs.append((step, int(dur),
                                     [scale_degree(int(deg_s) + shift, part["base_octave"], tr)], vel))
                         step += int(dur)
+                    if step > bar.grid:
+                        raise SystemExit(
+                            f"{where}: degrees 占了 {step} 格，但这一小节只有 {bar.grid} 格"
+                            f"（{bar.beats}/{bar.unit}）")
                 elif "pattern" in seg:
                     layers = [(seg["pattern"], seg.get("velocity", 80))]
                     if "also" in seg:
@@ -404,17 +603,17 @@ def expand(spec, insts):
                         pitch, rhythm = pat["pitch"], pat["rhythm"]
                         if is_drum:
                             dmap = part["drum_map"]
-                            for st, _du in runs(rhythm, grid):
+                            for st, _du in runs(rhythm, bar.grid, where):
                                 evs.append((st, 1, [dmap[pitch]], lvel))
                         elif pitch == "arp":
                             tones = resolve("arp", h, part)
-                            for st, du in runs(rhythm, grid):
-                                evs.append((st, du, [tones[(st // 2) % len(tones)]], lvel))
+                            for st, du in runs(rhythm, bar.grid, where):
+                                evs.append((st, du, [tones[(st // bar.eighth) % len(tones)]], lvel))
                         else:
                             prev = part.get("_prev")
                             ps = resolve(pitch, h, part, prev)
                             part["_prev"] = ps[0]
-                            for st, du in runs(rhythm, grid):
+                            for st, du in runs(rhythm, bar.grid, where):
                                 evs.append((st, du, [p + tr for p in ps], lvel))
                 bars.setdefault(b, []).extend((part, st, du, ps, v) for (st, du, ps, v) in evs)
 
@@ -423,8 +622,8 @@ def expand(spec, insts):
 
 # ---------- 音区：推荐 / 人为覆盖 / 自动择位 ----------
 
-def autoplace(bars, parts, grid):
-    """place: auto —— 选一个八度，使材料尽量待在**舒适区**里（C1 的"推荐"）。"""
+def autoplace(bars, parts):
+    """place: auto —— 选一个八度，使材料尽量待在**舒适区**里（C1 的“推荐”）。"""
     for part in parts:
         if part.get("place") != "auto" or part.get("drum"):
             continue
@@ -599,30 +798,97 @@ def selftest():
             print(f"      want {want}\n      got  {got}")
     # 只渲染后半段时不能发出负 tick：负 delta-time 会得到畸形 MIDI，
     # fluidsynth 读它的时候不报错、不返回，就那么挂着（踩过一次）。
-    spec = {"meta": {"tempo": 120, "division": 480, "grid": 16, "meter": [4, 4], "title": "t"},
-            "harmony": ["C5"] * 4,
+    spec = {"meta": {"tempo": 120, "division": 480, "subdivision": 4,
+                     "meter": [{"bar": 1, "beats": 4, "unit": 4}], "title": "t"},
+            "harmony": [{"name": "C5"}] * 4,
             "color": [{"bars": "1-4", "reverb": [40, 120], "brightness": 90}]}
-    evs = color_events(spec, 3, 16, 480 // (16 // 4))
+    evs = color_events(spec, 3, meter_of(spec))
     ok = bool(evs) and min(t for (t, _c, _v) in evs) >= 0 and min(t for (t, _c, _v) in evs) == 0
     bad += not ok
     print(f"  {'✓' if ok else '✗'} 只渲染后半段：CC 不发负 tick，且窗口起点有值")
-    total = len(cases) + 1
+
+    # 奇数拍：手算得出来，所以能验。4/4 四小节（1920 tick）→ 7/8 四小节（1680）→
+    # 5/4（2400）→ 11/8（2640）。格子数分别是 16 / 28 / 20 / 44。
+    odd = {"meta": {"tempo": 92, "division": 480, "subdivision": 4,
+                    "meter": [{"bar": 1, "beats": 4, "unit": 4},
+                              {"bar": 5, "beats": 7, "unit": 8, "group": [2, 2, 3]},
+                              {"bar": 9, "beats": 5, "unit": 4, "group": [3, 2]},
+                              {"bar": 13, "beats": 11, "unit": 8, "group": [3, 2, 3, 3]}],
+                    "title": "t"},
+           "harmony": [{"name": "C5"}] * 16}
+    m = meter_of(odd)
+    want = [(1, 0, 1920, 16, 120), (5, 7680, 1680, 28, 60),
+            (9, 14400, 2400, 20, 120), (13, 24000, 2640, 44, 60)]
+    got = [(b.index, b.start_tick, b.ticks, b.grid, b.step_ticks)
+           for b in (m[1], m[5], m[9], m[13])]
+    ok = got == want
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 拍号 4/4→7/8→5/4→11/8：起点 tick / 小节点数 / 格子数 / 步长")
+    if not ok:
+        print(f"      want {want}\n      got  {got}")
+    # 小节长度不等时，按 tick 反查必须找对小节（7/8 和 5/4 边界最容易差一格）。
+    # 4/4 四小节 0..7679，7/8 四小节 7680..14399，5/4 四小节 14400..23999，11/8 24000..
+    probes = [(0, 1), (1919, 1), (1920, 2), (5760, 4), (7679, 4),
+              (7680, 5), (9359, 5), (9360, 6), (14399, 8),
+              (14400, 9), (16799, 9), (16800, 10), (23999, 12),
+              (24000, 13), (26639, 13), (26640, 14), (31919, 15), (31920, 16)]
+    wrong = [(t, b.index) for t, want_b in probes for b in [m.at_tick(t)] if b.index != want_b]
+    bad += len(wrong) > 0
+    print(f"  {'✓' if not wrong else '✗'} 按 tick 反查小节（边界差一格会全错）")
+    for t, got_b in wrong:
+        print(f"      tick {t} 落在 bar {got_b}")
+
+    # 拍号写错必须报错，而不是凑合：这几条都是真会写错的形式。
+    rejects = [
+        ("group 加不起来", [{"bar": 1, "beats": 7, "unit": 8, "group": [2, 2, 2]}]),
+        ("分母不是 2 的幂", [{"bar": 1, "beats": 3, "unit": 3}]),
+        ("不从第 1 小节开始", [{"bar": 2, "beats": 4, "unit": 4}]),
+        ("段落起点重复", [{"bar": 1, "beats": 4, "unit": 4},
+                     {"bar": 1, "beats": 3, "unit": 4}]),
+    ]
+    for label, segs in rejects:
+        try:
+            meter_of({"meta": {"tempo": 92, "division": 480, "meter": segs},
+                      "harmony": [{"name": "C5"}] * 8})
+        except SystemExit:
+            print(f"  ✓ 拒绝：{label}")
+        else:
+            bad += 1
+            print(f"  ✗ 没有拒绝：{label}")
+
+    # 节奏串长度不对必须拒绝：以前会静默补齐/截断。
+    for label, r, g in (("短了", "x" * 12, 16), ("长了", "x" * 20, 16),
+                        ("乱字符", "x" * 15 + "z", 16), ("正好", "x" * 14 + "--", 16)):
+        try:
+            runs(r, g, "selftest")
+        except SystemExit:
+            ok = label != "正好"
+            bad += not ok
+            print(f"  {'✓' if ok else '✗'} 节奏串{label}（{g} 格）")
+        else:
+            ok = label == "正好"
+            bad += not ok
+            print(f"  {'✓' if ok else '✗'} 节奏串{label}（{g} 格）没有拒绝")
+
+    total = len(cases) + 2 + 4 + len(rejects) + 4
     print(f"\n  {total - bad}/{total} 通过")
     raise SystemExit(1 if bad else 0)
 
 
 # ---------- 演奏可行性（把 override 变成可量化的东西）----------
 
-def report(bars, parts, grid=16):
+def report(bars, parts, meter):
     """每条都是可量的：舒适区时长占比、最长连续、大跳、最高音。"""
-    steps_per_beat = grid / 4
     rows = []
     for part in parts:
         evs = [(b, st, du, ps) for b in sorted(bars)
                for (p, st, du, ps, v) in bars[b] if p is part]
         if not evs or part.get("drum"):
             continue
-        iv = sorted(((b - 1) * grid + st, (b - 1) * grid + st + du, ps) for b, st, du, ps in evs)
+        # tick 而不是格数：拍号一变，一格的长度就变了，累加格数会得到假的拍数。
+        iv = sorted((meter[b].start_tick + st * meter[b].step_ticks,
+                     meter[b].start_tick + (st + du) * meter[b].step_ticks, ps)
+                    for b, st, du, ps in evs)
         # 合并重叠 -> 连续演奏段
         runs, cur = [], None
         for a, z, ps in iv:
@@ -635,15 +901,21 @@ def report(bars, parts, grid=16):
                 cur = [a, z, list(ps)]
         if cur:
             runs.append(cur)
-        longest = max((z - a) for a, z, _ in runs) / steps_per_beat if runs else 0
-        total = sum(z - a for a, z, _ in runs) / steps_per_beat
+
+        def beats(t):
+            """tick 长度 -> 拍数（按它开头所在小节算，拍号内一致）。"""
+            bar = meter.at_tick(t)
+            return t / (bar.ticks / bar.beats)
+
+        longest = max((beats(z - a) for a, z, _ in runs), default=0)
+        total = sum(beats(z - a) for a, z, _ in runs)
 
         lo_r, hi_r = part["range"]
         lo_c, hi_c = part.get("comfort") or (lo_r, hi_r)
-        out_c = sum((z - a) for a, z, ps in runs
-                    if any(not (lo_c <= x <= hi_c) for x in ps)) / steps_per_beat
-        out_r = sum((z - a) for a, z, ps in runs
-                    if any(not (lo_r <= x <= hi_r) for x in ps)) / steps_per_beat
+        out_c = sum(beats(z - a) for a, z, ps in runs
+                    if any(not (lo_c <= x <= hi_c) for x in ps))
+        out_r = sum(beats(z - a) for a, z, ps in runs
+                    if any(not (lo_r <= x <= hi_r) for x in ps))
 
         leaps, top = 0, None
         if part.get("monophonic"):
@@ -707,28 +979,36 @@ def dynamics_map(spec):
     return lvl
 
 
-def color_events(spec, first, grid, tps):
+def color_events(spec, first, meter):
     """CC 自动化：混响 91 / 合唱 93 / 亮度 74。
 
     值可以是常数，也可以是 [起, 止] —— 后者在区间内按拍线性插值，
-    于是"混响慢慢推上去"是一条曲线，不是一级一级的阶梯（§8 D5）。
+    于是“混响慢慢推上去”是一条曲线，不是一级一级的阶梯（§8 D5）。
     """
     total = len(spec["harmony"])
+    t0 = meter[first].start_tick
     out = []
     for seg in spec.get("color") or []:
         bs = parse_bars(seg["bars"], total)
-        b0, b1 = bs[0], bs[-1]
-        n = (b1 - b0 + 1) * grid
+        # 采样点：每四格一个。序号用来算插值比例，tick 用来定位——
+        # 拍号一变两者就不再成比例，所以必须分开记。
+        marks, k = [], 0
+        for bar in bs:
+            b = meter[bar]
+            for j in range(0, b.grid, 4):
+                marks.append((b.start_tick + j * b.step_ticks, k + j))
+            k += b.grid
+        n = k
         for key, cc in (("reverb", 91), ("chorus", 93), ("brightness", 74)):
             if key not in seg:
                 continue
             v = seg[key]
             va, vb = (v[0], v[1]) if isinstance(v, (list, tuple)) else (v, v)
             pre = None
-            for i in range(0, n, 4):
-                frac = i / max(1, n - 1)
+            for tick, idx in marks:
+                frac = idx / max(1, n - 1)
                 val = max(0, min(127, round(va + (vb - va) * frac)))
-                t = ((b0 - first) * grid + i) * tps
+                t = tick - t0
                 if t < 0:
                     # 渲染窗口之前：记住最后一档，压到 0 号 tick 上，
                     # 否则只渲染后半段时混响会从 0 突然跳起来。
@@ -741,22 +1021,30 @@ def color_events(spec, first, grid, tps):
     return out
 
 
-def build_midi(spec, bars, parts, melody=True, first=1):
+def build_midi(spec, bars, parts, meter, melody=True, first=1):
     """first = 输出时间轴上的第 1 小节对应原谱的哪一小节。
 
     内环只想要第 17-20 小节时，传 first=16（多留一小节 preroll，
     让从前一小节拖过来的音保留起音），然后按时间切音频。
     """
     meta = spec["meta"]
-    div, grid = meta["division"], meta["grid"]
-    tps = div // (grid // meta["meter"][0])
+    div = meta["division"]
+    t0 = meter[first].start_tick
 
     conductor = [(0, 0, b"\xff\x51\x03" + int(60_000_000 / meta["tempo"]).to_bytes(3, "big")),
-                 (0, 1, b"\xff\x58\x04" + bytes([meta["meter"][0], 2, 24, 8])),
                  (0, 2, meta_text(meta["title"]))]
+    # 拍号可以变：每个变拍的小节都发一条（同拍号不重复）。
+    last = None
+    for b in meter.all():
+        sig = (b.beats, b.unit)
+        if sig == last:
+            continue
+        last = sig
+        conductor.append((max(0, b.start_tick - t0), 1,
+                          b"\xff\x58\x04" + bytes([b.beats, b.unit.bit_length() - 1, 24, 8])))
     tracks = [track_chunk(conductor)]
     lvl = dynamics_map(spec)
-    colors = color_events(spec, first, grid, tps)
+    colors = color_events(spec, first, meter)
 
     for part in parts:
         if not melody and part.get("_theme"):
@@ -772,16 +1060,17 @@ def build_midi(spec, bars, parts, melody=True, first=1):
         if prior:
             evs.append((0, 1, bytes([0xB0 | ch, 7, int(lvl[max(prior)] * 127)])))
         for bar in sorted(bars):
+            b = meter[bar]
             if bar in lvl and bar >= first:
-                evs.append(((bar - first) * grid * tps, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
+                evs.append((b.start_tick - t0, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
             for (p, st, du, pitches, vel) in bars[bar]:
                 if p is not part:
                     continue
-                t0 = (bar - first) * grid * tps + st * tps
-                t1 = t0 + du * tps
+                s = b.start_tick - t0 + st * b.step_ticks
+                e = s + du * b.step_ticks
                 for i, pitch in enumerate(pitches):
-                    evs.append((t0, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
-                    evs.append((t1, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
+                    evs.append((s, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
+                    evs.append((e, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
         tracks.append(track_chunk(evs))
 
     header = (b"MThd" + (6).to_bytes(4, "big") + (1).to_bytes(2, "big")
@@ -791,18 +1080,55 @@ def build_midi(spec, bars, parts, melody=True, first=1):
 
 # ---------- 输出 ----------
 
-def roll(spec, bars, parts):
-    grid = spec["meta"]["grid"]
+def _sounding(bars, meter, b):
+    """第 b 小节响着的声部（含从前一小节拖过来的音）。
+
+    一个音可以比它所在的小节还长（跨小节连线）。这种音在 MIDI 里是对的，
+    但如果只看 `bars[b]` 就会在下一小节“消失”——听起来有、图上没有。
+    """
+    names = {p["name"] for (p, *_r) in bars.get(b, [])}
+    if b > 1:
+        prev = meter[b - 1]
+        for (p, st, du, *_r) in bars.get(b - 1, []):
+            if st + du > prev.grid:
+                names.add(p["name"])
+    return names
+
+
+def roll(spec, bars, parts, meter):
     total = len(spec["harmony"])
     print()
     for start in range(1, total + 1, 4):
         block = list(range(start, min(start + 4, total + 1)))
         head = "".join(f"|{chord_at(spec['harmony'], b)['name']:<16}" for b in block) + "|"
         print(f"  bar {block[0]:>2}-{block[-1]:<2}  {head}")
+        # 分组线：group [2,2,3] 的重音落在哪几格。只在有 group 的地方画。
+        if any(meter[b].group for b in block):
+            cells = []
+            for b in block:
+                bar = meter[b]
+                line = [" "] * bar.grid
+                if bar.group:
+                    k = 0
+                    for g in bar.group:
+                        line[k] = "'"
+                        k += g * (bar.grid // bar.beats)
+                cells.append("".join(line))
+            print(f"  {'group':<10}" + " ".join(cells))
         for part in parts:
             cells = []
             for b in block:
+                grid = meter[b].grid
                 line = ["."] * grid
+                # 先画从前一小节越过来的那段（起音不在这一小节）
+                if b > 1:
+                    prev = meter[b - 1]
+                    for (p, st, du, _pitches, _vel) in bars.get(b - 1, []):
+                        if p is not part or st + du <= prev.grid:
+                            continue
+                        over = (st + du - prev.grid) * prev.step_ticks // meter[b].step_ticks
+                        for k in range(min(grid, over)):
+                            line[k] = "|"
                 for (p, st, du, _pitches, _vel) in bars.get(b, []):
                     if p is not part:
                         continue
@@ -813,11 +1139,13 @@ def roll(spec, bars, parts):
         print()
 
 
-def presence(spec, bars, parts):
-    print("  bar  chord        n")
+def presence(spec, bars, parts, meter):
+    print("  bar  meter  chord        n")
     for b in range(1, len(spec["harmony"]) + 1):
-        names = sorted({p["name"] for (p, *_r) in bars.get(b, [])})
-        print(f"  {b:>3}  {chord_at(spec['harmony'], b)['name']:<12} {len(names)}  {', '.join(names)}")
+        bar = meter[b]
+        names = sorted(_sounding(bars, meter, b))
+        print(f"  {b:>3}  {bar.beats}/{bar.unit}  {chord_at(spec['harmony'], b)['name']:<12} "
+              f"{len(names)}  {', '.join(names)}")
 
 
 def main():
@@ -826,14 +1154,15 @@ def main():
         selftest()
     spec = load_yaml(path, "spec")
     ens, insts = load_ensemble(spec, path)
+    meter = meter_of(spec)
 
-    bars, parts, tracks, mat_warns = expand(spec, insts)
-    bars = autoplace(bars, parts, spec["meta"]["grid"])
+    bars, parts, tracks, mat_warns = expand(spec, insts, meter)
+    bars = autoplace(bars, parts)
     bars, pis = apply_presence(spec, bars)
 
     out = path.rsplit(".", 1)[0]
     for name, with_mel in ((out + ".mid", True), (out + "-nomelody.mid", False)):
-        m = build_midi(spec, bars, parts, melody=with_mel)
+        m = build_midi(spec, bars, parts, meter, melody=with_mel)
         try:
             with open(name, "wb") as f:
                 f.write(m)
@@ -875,9 +1204,9 @@ def main():
     elif not errors:
         print(f"    （{len(warns)} 条提示，无错误）")
 
-    report(bars, parts, spec["meta"]["grid"])
-    roll(spec, bars, parts)
-    presence(spec, bars, parts)
+    report(bars, parts, meter)
+    roll(spec, bars, parts, meter)
+    presence(spec, bars, parts, meter)
 
 
 if __name__ == "__main__":

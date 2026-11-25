@@ -701,6 +701,54 @@ parts:
 - **素材与声部已分离**：旋律只写一遍，三个声部各自声明承载它。同度齐奏与八度叠置不再靠复制粘贴。
 - 平台期在**节奏的书写**：字符串只有固定步数，三连音/复节奏写不出来（见 §8 B4）。
 
+### 拍号可以变（奇数拍）
+
+`meter` 和 `harmony` 同构：一串段落，每段从某小节开始。**格子数不再是手写常量**，
+而是 `beats × subdivision` 推出来的——以前 `grid: 16` 和 `meter: [4, 4]` 是同一件事写两遍。
+
+```yaml
+meta:
+  tempo: 100
+  division: 480          # 一个四分音符多少 tick（MIDI 的分辨率）
+  subdivision: 4         # 每拍切几刀
+  meter:
+    - {bar: 1,  beats: 4,  unit: 4}                          # 4/4，格 16
+    - {bar: 5,  beats: 7,  unit: 8, group: [2, 2, 3]}        # 7/8，格 28
+    - {bar: 9,  beats: 5,  unit: 4, group: [3, 2]}           # 5/4，格 20
+```
+
+`subdivision` 按 **unit** 解释：7/8 里写 `subdivision: 4` 想的是 7 个八分各切四刀，
+不是 14 个十六分。tick 数 `480 × 4 × beats / unit` 永远整除（`unit ∈ {2,4,8,16}`）。
+
+四条拒绝，而不是凑合：
+
+| 写错的形式 | 报什么 |
+|---|---|
+| `group` 加起来不等于 `beats` | `bar 5: group [2, 2, 2] 加起来是 6 拍，但这一小节有 7 拍` |
+| 分母不是 2 的幂（`unit: 3`） | `unit=3 不合法（MIDI 的拍号分母只能是 (2, 4, 8, 16)）` |
+| 不从第 1 小节开始 / 段落起点重复 | `拍号必须从第 1 小节开始` / `段落顺序不对或重叠` |
+| **节奏串长度和格子数不符** | `节奏串 'x-x-' 有 4 格，这一小节要 28 格` |
+
+最后一条以前是**静默补齐/截断**的（`(rhythm + "-" * grid)[:grid]`）。
+统一网格下只是烦人；每小节网格不同之后，它会让后半小节全空，而且不报错。
+
+内部随之换了坐标：引入 `Bar`（`start_tick / ticks / beats / unit / grid / step_ticks / group`）
+和 `Meter`（按小节号、按 tick、按秒三种查法）。全曲唯一的乘式 `tick = bar × grid × tps` 消失，
+所有位置改成**两个 tick 相减**。`augment` / `diminish` 这类改变长度的算子改成在绝对 tick 上算，
+“除不尽就拒绝”成了常态——这是奇数拍的真实代价。
+
+**`group` 今天只做两件事**：校验，以及在钢琴卷帘上画分组线（`'` 标出每组的起点）。
+它**不**自动生成节奏（节奏是人写的），也**没进 MIDI**——MIDI 的拍号 meta 表达不了分组，
+这是已知缺口。
+
+**明确不做**：复拍号（会让“第 17 小节”失去唯一含义，`--bars`/lint/视图/solo 全依赖单一 tick→bar 映射）；
+曲中变速（等真需要再一起动）。
+
+验收：`spikes/01/meter-selftest.yaml` 是一段 12 小节的真谱（4/4 → 7/8 `[2,2,3]` → 5/4 `[3,2]`），
+同一句旋律三种写法；`render.py --selftest` 手算三种拍号的小节起点 tick、格子和边界反查。
+两首现有谱（`farewell-v3`、`farewell-steampunk`）重渲后 MIDI **逐字节不变**，
+而且 `smoke.sh` 现在**每首谱都跑全部 12 个入口**——不等长小节的假设会在任何一个入口里错。
+
 ---
 
 ## 8. 现状
@@ -721,6 +769,7 @@ parts:
 | **换整套编制不用改一行代码** | 蒸汽机版：8 件全是电子/键盘/打击，**一件摇滚乐器都没有**。只写了 `ensembles/steampunk.yaml` + 7 个 `instruments/*.yaml`，`render.py` 一个字没动（C1 的直接检验） | 新编制的音色好坏由 GM 决定，判断不了 |
 | **骨架与编排已分离** | 旋律只写一遍；小提琴/EWI 同度齐奏、Lead Guitar 低八度，全从 `carries` 得出 | 只有一条主题轨、两种承载方式；变换与 fidelity 未接 |
 | **听、比、改的闭环（C10）** | `audition.py`：小节循环、solo/mute、A/B、盲测、结构 diff；`probe.py`：把一段摊成音区塔/八度分布/频谱分带。小节范围 0.24–0.63 秒 | 播放依赖系统音频服务；没有交互界面；候选仍由人写，没有自动生成 |
+| **拍号可以变（奇数拍）** | `meter` 段落化，格子数由 `beats × subdivision` 推导；`Bar`/`Meter` 拿绝对 tick 作唯一坐标。`meter-selftest.yaml` 一段 12 小节的真谱：4/4 → 7/8 `[2,2,3]` → 5/4 `[3,2]`，同一句旋律三种写法 | `group` 没进 MIDI（拍号 meta 表达不了分组）；复拍号、曲中变速都没做 |
 
 ### B. 已知薄弱
 
@@ -730,6 +779,7 @@ parts:
 | 显著度 ≈ "最忙的" | 全曲都报电贝斯，人耳听的是小提琴 | 不修——**取消单一显著度分数**，改报分量表（§3.12） |
 | 交错度奖励"一疏一密" | 鼓 × 长号排第一，那不是 hocket | 需在同一拍位上算空隙 |
 | 节奏书写只有固定步数 | 三连音、复节奏、摇摆写不出来 | 需要可变 subdivision；**数据模型其实不限制**（480 tick 能整除 3 和 5），只是书写语法窄 |
+| 奇数拍会碰到“装不下” | `augment: 2` 在 7/8 上几乎总是拒绝；同一素材搬到不同拍号只能填满前几小节，剩下静默 | 这是真的代价，不是 bug：素材长度和格子数本来就是两件事。要不要自动重排是**音乐决定**，不该由算术替人做 |
 | 等音拼写是全局降号 | C 大调里的 G# 写成 Ab | 应由和声上下文决定（§3.6） |
 | **音源是 GM：低音区不可判** | 长号从 B3 降到 B2/C3 后，独听**总能量 −5.6 dB**、最强频率从 262 Hz 反而跑到 523 Hz、160–320 Hz 从 33.1% 掉到 4.9%。规格上是低音，听起来是高音——能量全在第 4、5 次谐波 | 换音源之前，任何"低音够不够厚"的问题这套系统答不了 |
 | **改动够不够显著，没在听之前测** | 九声部里一个声部动 5 dB，是感知上的空操作。盲测时听者确实听不出来 | 正交不够，还得够显著。渲染两版、比分带能量，就能在听之前便宜地测出来（未实现） |
@@ -759,6 +809,10 @@ parts:
    - 第一次（长号降八度）：盲听时用户**听不出来**；单独量长号，B 比 A 低 5.6 dB、最强频率上移一个八度——变薄变亮，不是变厚。上一轮那句"B 不错"大概率来自看得见 spec。
    - 第二次（蒸汽机冷高潮）：只撤 Synth Bass，低频 30.7% → **27.4%**，几乎没动；改成撤底鼓，34.4% → **21.7%**。撑着低频的从头到尾是底鼓。
    - 共同点：两处改动都"看起来合理、量起来自洽"，但改的**不是设计意图指向的那个东西**。这不是测量失败，是对因果的假设失败——所以候选必须正交，而且必须在听之前量一次显著性。
+9. **时间的表示层刚刚换过一次地基（2026-11）。** 以前 `tick = bar × grid × tps` 是全曲常数，`grid` 和 `meter` 是同一件事写两遍；现在 `Bar` 拿绝对 tick，`Meter` 支持段落化拍号，格子数推导。
+   代价要记清楚：`augment`/`diminish` 现在经常“除不尽”而拒绝（奇数拍的真实代价），跨拍号搬素材会只填满前几小节（素材长度 ≠ 格子数，这是正确行为）。
+   未做：`group` 只进校验和卷帘，**没进 MIDI**（拍号 meta 表达不了分组）；复拍号、曲中变速。
+   验收方式：两首现有谱的 MIDI **逐字节不变**，加上 `--selftest` 里能手算的三种拍号。
 
 ### E. 一句话
 
@@ -775,6 +829,7 @@ ensembles/band.yaml           编制：9 人摇滚乐队
 ensembles/steampunk.yaml      编制：8 件电子/键盘/打击，一件摇滚乐器都没有
 spikes/01/farewell-v3.yaml    曲子：ensemble + 和声 + 在场路径 + 动态 + 各声部
 spikes/01/farewell-steampunk.yaml  同一首曲子的另一种读法：40 小节全长、全空五度、冷高潮
+spikes/01/meter-selftest.yaml 拍号自检：4/4 → 7/8 → 5/4，同一句旋律三种写法
 spikes/01/render.py           spec → MIDI + 钢琴卷帘 + 和声自检 + 演奏可行性 + lint
 spikes/01/audio.py            spec → WAV（gm / synth，隔离外部进程并带超时）
 spikes/01/audition.py         内环：循环 / solo / mute / A-B / 盲测 / diff
@@ -790,10 +845,11 @@ samples/                      被接受的版本（工作渲染不进仓库）
 ```bash
 cd spikes/01
 python3 render.py farewell-v3.yaml
-rm -f farewell-v3-gm.wav && fluidsynth -ni -F farewell-v3-gm.wav \
-  /usr/share/soundfonts/FluidR3_GM.sf2 farewell-v3.mid
-python3 measure.py farewell-v3-gm.wav 112 24
+python3 audio.py farewell-v3.yaml -o farewell-v3-gm.wav      # 已带隔离和超时
+python3 measure.py farewell-v3-gm.wav farewell-v3.yaml       # 小节边界从谱面读，不假设 4/4
 python3 relations.py farewell-v3.yaml
+python3 audition.py farewell-v3.yaml --bars 17-20 --loop 4
+./smoke.sh                                                   # 所有入口 × 三首谱
 ```
 
 ---

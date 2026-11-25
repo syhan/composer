@@ -43,25 +43,28 @@ def rpad(s, n):
     return " " * max(0, n - _w(s)) + str(s)
 
 
-def bar_seconds(spec):
-    m = spec["meta"]
-    return m["meter"][0] * 60.0 / m["tempo"]
+def collect(bars, parts, meter, lo, hi):
+    """每个声部在这一段里实际发了什么音（时长加权）。
 
-
-def collect(bars, parts, lo, hi):
-    """每个声部在这一段里实际发了什么音（时长加权）。"""
+    权重用 **tick** 而不是格数：拍号一变，一格就不是同一个长度了。
+    显示时再除回 120 tick（division 480 下的一个十六分音符），数字才好看。
+    """
     out = {}
     for part in parts:
-        ps, iv = [], []
+        ps, iv, beats, ticks = [], [], 0.0, 0
         for b in range(lo, hi + 1):
+            bar = meter[b]
             for (p, st, du, pitches, v) in bars.get(b, []):
                 if p is not part:
                     continue
-                ps += list(pitches) * du
+                t = du * bar.step_ticks
+                ticks += t
+                ps += list(pitches) * max(1, t // 120)
+                beats += t / (bar.ticks / bar.beats)
                 if len(pitches) > 1:
                     iv.append(max(pitches) - min(pitches))
         if ps:
-            out[part["name"]] = {"ps": ps, "iv": iv}
+            out[part["name"]] = {"ps": ps, "iv": iv, "beats": beats, "ticks": ticks}
     return out
 
 
@@ -73,7 +76,7 @@ def section_register(rows):
         ps = d["ps"]
         med_iv = f"{int(np.median(d['iv']))} 半音" if d["iv"] else "—"
         print("    " + pad(name[:17], 18) + nm(min(ps)).rjust(6) + nm(max(ps)).rjust(6)
-              + nm(int(np.median(ps))).rjust(6) + f"{len(ps)/4:.0f}".rjust(8)
+              + nm(int(np.median(ps))).rjust(6) + f"{d['beats']:.0f}".rjust(8)
               + med_iv.rjust(12))
 
 
@@ -85,7 +88,7 @@ def section_octaves(rows):
     if not hist:
         return
     top = max(hist.values())
-    print("\n  八度分布（时长加权，1 单位 = 一个十六分音符的时长）")
+    print("\n  八度分布（时长加权，1 单位 = 120 tick）")
     for oct in range(min(hist), max(hist) + 1):
         v = hist.get(oct, 0)
         print(f"    C{oct:<3}{v:>6}  {'#' * int(40 * v / top)}")
@@ -108,16 +111,19 @@ def section_spectrum(x, sr):
     print(f"\n    低频 <160 Hz {low:.1f}%    中频 160–1.3k {mid:.1f}%    高频 >1.3k {high:.1f}%")
 
 
-def section_bars(bars, harmony, lo, hi):
+def section_bars(bars, harmony, meter, lo, hi):
     chord_of = {h["bar"]: h["name"] for h in harmony}
     print("\n  每小节")
-    print("    " + pad("bar", 6) + rpad("音符数", 8) + rpad("在场件数", 10)
-          + rpad("发声拍", 8) + "  和弦")
+    print("    " + pad("bar", 6) + rpad("拍号", 7) + rpad("音符数", 8)
+          + rpad("在场件数", 10) + rpad("发声拍", 8) + "  和弦")
     for b in range(lo, hi + 1):
+        bar = meter[b]
         evs = bars.get(b, [])
         names = {p["id"] for (p, *_r) in evs}
-        beats = sum(du for (_p, _st, du, _ps, _v) in evs) / 4
-        print("    " + pad(b, 6) + f"{len(evs)}".rjust(8) + f"{len(names)}".rjust(10)
+        beats = sum(du * bar.step_ticks / (bar.ticks / bar.beats)
+                    for (_p, _st, du, _ps, _v) in evs)
+        print("    " + pad(b, 6) + rpad(f"{bar.beats}/{bar.unit}", 7)
+              + f"{len(evs)}".rjust(8) + f"{len(names)}".rjust(10)
               + f"{beats:.0f}".rjust(8) + "  " + chord_of.get(b, "—"))
 
 
@@ -162,7 +168,7 @@ def main():
     lo, hi = o["bars"] or (1, total)
     lo, hi = max(1, lo), min(total, hi)
     bars = audition.focus(v["bars"], o["solo"], o["mute"])
-    spb = bar_seconds(spec)
+    meter = v["meter"]
 
     scope = f"bar {lo}-{hi}"
     if o["solo"]:
@@ -171,13 +177,13 @@ def main():
         scope += "  mute " + ",".join(sorted(o["mute"]))
     print(f"\n  探针  {os.path.basename(o['spec'])}   {scope}")
 
-    rows = collect(bars, v["parts"], lo, hi)
+    rows = collect(bars, v["parts"], meter, lo, hi)
     if not rows:
         print("\n  （这一段没有任何声部在发声）")
         return
     section_register(rows)
     section_octaves(rows)
-    section_bars(bars, spec["harmony"], lo, hi)
+    section_bars(bars, spec["harmony"], meter, lo, hi)
 
     if o["audio"]:
         tmpdir = tempfile.mkdtemp(prefix="probe-")
@@ -185,7 +191,10 @@ def main():
             pre = max(1, lo - 1)
             wav = audition.render_version(v, bars, pre, hi, o["engine"], tmpdir, "probe")
             w, sr = audition.read_wav(wav)
-            seg = audition.take(w, sr, (lo - pre) * spb, (hi - pre + 1) * spb)
+            # 小节的秒数不是常数（拍号可变），只能按 tick 累加算。
+            t0 = meter.secs(pre)
+            seg = audition.take(w, sr, meter.secs(lo) - t0,
+                                meter.secs(hi) + meter.bar_secs(hi) - t0)
             section_spectrum(seg, sr)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

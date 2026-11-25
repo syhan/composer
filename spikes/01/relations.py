@@ -10,18 +10,17 @@
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-from render import apply_presence, autoplace, expand, load_ensemble, load_yaml
-
-GRID = 16
+from render import apply_presence, autoplace, expand, load_ensemble, load_yaml, meter_of
 
 
 def load(path):
     spec = load_yaml(path, "spec")
     _ens, insts = load_ensemble(spec, path)
-    bars, parts, _tracks, _warns = expand(spec, insts)
-    bars = autoplace(bars, parts, spec["meta"]["grid"])
+    meter = meter_of(spec)
+    bars, parts, _tracks, _warns = expand(spec, insts, meter)
+    bars = autoplace(bars, parts)
     bars, _ = apply_presence(spec, bars)
-    return spec, bars, parts
+    return spec, bars, parts, meter
 
 
 def per_bar(bars):
@@ -66,16 +65,18 @@ def salience(pb):
     return rows
 
 
-def pair_metrics(pb):
+def pair_metrics(pb, meter):
     agg = {}
-    for d in pb.values():
+    for b, d in pb.items():
         ids = list(d)
         for i in range(len(ids)):
             for j in range(i + 1, len(ids)):
                 a, c = d[ids[i]], d[ids[j]]
                 k = tuple(sorted((a["name"], c["name"])))
-                m = agg.setdefault(k, {"bars": 0, "co": 0, "on": 0, "uni": 0, "iv": [], "dens": []})
+                m = agg.setdefault(k, {"bars": 0, "co": 0, "on": 0, "uni": 0,
+                                       "iv": [], "dens": [], "grid": 0})
                 m["bars"] += 1
+                m["grid"] += meter[b].grid      # 交错度的分母要按拍号算，不是写死 16
                 co = sum(1 for s in a["steps"] if s in c["steps"])
                 m["on"] += len(a["steps"])
                 m["co"] += co
@@ -93,7 +94,7 @@ def pair_metrics(pb):
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml"
-    spec, bars, _parts = load(path)
+    spec, bars, _parts, meter = load(path)
     pb = per_bar(bars)
 
     print("  显著度剖面（测量，不是声明）——每小节实际最容易听到的两个")
@@ -105,11 +106,11 @@ def main():
     print("\n  关系表（成对指标；按交错度排序）")
     print(f"    {'一对声部':<38}{'同在':>4}{'节奏重合':>9}{'交错度':>8}{'中位音程':>6}{'同八度':>7}")
     rows = []
-    for (x, y), m in pair_metrics(pb).items():
+    for (x, y), m in pair_metrics(pb, meter).items():
         if m["bars"] < 2:
             continue
         coin = m["co"] / max(1, m["on"])
-        cover = min(1.0, m["on"] / (m["bars"] * GRID / 2))
+        cover = min(1.0, m["on"] / (m["grid"] / 2))
         interlock = cover * (1 - coin)
         ivs = sorted(m["iv"])
         med = ivs[len(ivs) // 2] if ivs else 0

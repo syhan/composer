@@ -49,7 +49,7 @@ run "render --selftest" "$PY" render.py --selftest
 # 每首谱跑一遍全部入口。加了新谱就往这里加一行——
 # 一个入口只被一首谱覆盖过，等于没被覆盖（synth.py 就是这么坏掉的）。
 suite() {
-  local spec=$1 tempo=$2 nb=$3 rng=$4 solo=$5
+  local spec=$1 rng=$2 solo=$3
   local t="[$spec]"
   run "render $t"    "$PY" render.py "$spec"
   run "synth $t"     "$PY" synth.py "$spec"
@@ -57,7 +57,7 @@ suite() {
   run "relations $t" "$PY" relations.py "$spec"
   run "audio gm $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-gm.wav" --engine gm
   run "audio sy $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-sy.wav" --engine synth
-  run "measure $t"   "$PY" measure.py "$tmp/$spec-gm.wav" "$tempo" "$nb"
+  run "measure $t"   "$PY" measure.py "$tmp/$spec-gm.wav" "$spec"
   run "audition $t"  "$PY" audition.py "$spec" --bars "$rng" --loop 2 -o "$tmp/$spec-a1.wav"
   run "solo $t"      "$PY" audition.py "$spec" --bars "$rng" --solo "$solo" -o "$tmp/$spec-a2.wav"
   run "A/B $t"       "$PY" audition.py "$spec" "$spec" --bars "$rng" --diff -o "$tmp/$spec-a3.wav"
@@ -65,9 +65,13 @@ suite() {
   run "probe-n $t"   "$PY" probe.py "$spec" --bars "$rng" --no-audio
 }
 
-suite farewell-v3.yaml      112 24 17-20 violin
+suite farewell-v3.yaml      17-20 violin
 # 蒸汽机版带 color: 段，probe 只渲染 21-24 —— 正好覆盖"只渲染后半段"这条路径
-suite farewell-steampunk.yaml 92 32 21-24 theremin
+suite farewell-steampunk.yaml 21-24 theremin
+# 拍号自检谱：4/4 → 7/8 → 5/4。所有入口都得在**不等长小节**上跑一遍，
+# 否则"小节边界"这类假设会安静地错下去（measure.py 曾经把 `4 * 60/tempo` 写死——
+# 对 4/4 一直是对的，所以从来没人发现，直到第一首 7/8 出现）。
+suite meter-selftest.yaml   5-8  theremin
 
 # 音频必须真的有声音，而不是一个空壳文件
 if [ -s "$tmp/farewell-v3.yaml-gm.wav" ]; then

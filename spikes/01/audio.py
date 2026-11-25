@@ -46,10 +46,11 @@ def render_midi(spec_path, mid_path):
     import render
     spec = render.load_yaml(spec_path, "spec")
     _ens, insts = render.load_ensemble(spec, spec_path)
-    bars, parts, _tracks, _warns = render.expand(spec, insts)
-    bars = render.autoplace(bars, parts, spec["meta"]["grid"])
+    meter = render.meter_of(spec)
+    bars, parts, _tracks, _warns = render.expand(spec, insts, meter)
+    bars = render.autoplace(bars, parts)
     bars, _issues = render.apply_presence(spec, bars)
-    data = render.build_midi(spec, bars, parts)
+    data = render.build_midi(spec, bars, parts, meter)
     try:
         with open(mid_path, "wb") as f:
             f.write(data)

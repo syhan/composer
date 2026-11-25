@@ -43,10 +43,11 @@ GAP = 0.35          # 两版之间的静默，够耳朵切换，又不会让人�
 def load(path):
     spec = render.load_yaml(path, "spec")
     _ens, insts = render.load_ensemble(spec, path)
-    bars, parts, tracks, warns = render.expand(spec, insts)
-    bars = render.autoplace(bars, parts, spec["meta"]["grid"])
+    meter = render.meter_of(spec)
+    bars, parts, tracks, warns = render.expand(spec, insts, meter)
+    bars = render.autoplace(bars, parts)
     bars, issues = render.apply_presence(spec, bars)
-    return {"path": path, "spec": spec, "bars": bars, "parts": parts,
+    return {"path": path, "spec": spec, "meter": meter, "bars": bars, "parts": parts,
             "tracks": tracks, "issues": issues, "warns": warns}
 
 
@@ -57,11 +58,6 @@ def focus(bars, solo, mute):
     if mute:
         return {b: [e for e in evs if e[0]["id"] not in mute] for b, evs in bars.items()}
     return bars
-
-
-def bar_seconds(spec):
-    m = spec["meta"]
-    return m["meter"][0] * 60.0 / m["tempo"]
 
 
 # ---------- WAV ----------
@@ -91,7 +87,7 @@ def render_version(v, bars, lo, hi, engine, tmpdir, tag):
     sub = {b: bars.get(b, []) for b in range(lo, hi + 1)}
     mid = os.path.join(tmpdir, f"{tag}.mid")
     wav = os.path.join(tmpdir, f"{tag}.wav")
-    data = render.build_midi(spec, sub, v["parts"], first=lo)
+    data = render.build_midi(spec, sub, v["parts"], v["meter"], first=lo)
     try:
         with open(mid, "wb") as f:
             f.write(data)
@@ -211,13 +207,15 @@ def print_diff(A, B, ba, bb, nbars):
         print(f"    {pid:<16} bars {bars_str(d['bars']):<12} {' '.join(bits)}{med}")
 
 
-def rms_curve(x, sr, nbars, spb):
-    out = []
-    for b in range(nbars):
-        seg = x[int(b * spb * sr):int((b + 1) * spb * sr)].astype(float) / 32768.0
+def rms_curve(x, sr, bar_secs):
+    """逐小节 RMS。传的是一串小节时长——拍号变了它不是常数。"""
+    out, t = [], 0.0
+    for sec in bar_secs:
+        seg = x[int(t * sr):int((t + sec) * sr)].astype(float) / 32768.0
         if not len(seg):
             break
         out.append(20 * np.log10(max(1e-9, float(np.sqrt((seg ** 2).mean())))))
+        t += sec
     return out
 
 
@@ -315,9 +313,12 @@ def main():
             if sr and sr_k != sr:               # 采样率不一致就没法拼成一条时间轴
                 raise SystemExit(f"采样率不一致：{sr} vs {sr_k}（{v['path']}）")
             sr = sr_k
-            vspb = bar_seconds(v["spec"])
-            seg = take(x, sr, (start - lo) * vspb, (end - lo + 1) * vspb)
-            curves.append(rms_curve(seg, sr, end - start + 1, vspb))
+            # 小节的秒数不是常数（7/8 比 4/4 短），所以只能按 tick 累加算秒。
+            m = v["meter"]
+            t_lo = m.secs(lo)
+            seg = take(x, sr, m.secs(start) - t_lo,
+                       m.secs(end) + m.bar_secs(end) - t_lo)
+            curves.append(rms_curve(seg, sr, [m.bar_secs(b) for b in range(start, end + 1)]))
             if o["loop"] > 1:
                 seg = np.tile(seg, (o["loop"], 1))
             chunks.append(seg)

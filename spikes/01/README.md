@@ -9,6 +9,7 @@ instruments/*.yaml      一件乐器：gm_program / range / comfort / roles / id
 ensembles/band.yaml     这套编制：有哪些座位、谁有 overrides
 farewell-v3.yaml        曲子：ensemble + 和声 + 在场路径 + 动态
                         + material（骨架，与谁演奏无关）+ parts（carries / segments）
+meter-selftest.yaml     拍号自检：4/4 → 7/8 [2,2,3] → 5/4 [3,2]，同一句旋律三种写法
 render.py               spec → MIDI + 卷帘 + 血统 + lint + 演奏可行性
 audio.py                spec → WAV（gm / synth 两种引擎）
 audition.py             内环：循环 / solo / mute / A-B / 盲测 / diff
@@ -27,9 +28,9 @@ cd spikes/01
 
 ./smoke.sh                              # 先跑这个：所有入口 + 计时
 python3 render.py farewell-v3.yaml      # MIDI + 卷帘 + lint
-python3 render.py --selftest            # 变换算子的手算样例
+python3 render.py --selftest            # 变换算子 + 拍号的手算样例
 python3 audio.py farewell-v3.yaml -o out.wav --engine gm
-python3 measure.py out.wav 112 24
+python3 measure.py out.wav farewell-v3.yaml   # 小节边界从谱面读，不假设 4/4
 python3 lyrics.py farewell-v3.yaml
 python3 relations.py farewell-v3.yaml
 
