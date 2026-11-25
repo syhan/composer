@@ -43,9 +43,9 @@ DARK = "░"  # 没有
 # 当前正在放的那一小节用另一种字，否则整个图是静止的，光标个箭头看不出"现在谁在响"。
 NOW = "▓"
 NOW_OFF = "▒"
-# 行首宽度：选中标记 1 + solo/mute 标记 1 + 名字 9 + 空格 1 = 12。
+# 行首宽度：选中标记 1 + solo/mute 标记 1 + 空格 1 + 名字 9 + 空格 1 = 13。
 # 之前写成 11，于是小节号、▲、A/B 条整体比格子左偏一列。
-LABEL = 12
+LABEL = 13
 
 
 # ---------- 读谱 ----------
@@ -152,7 +152,7 @@ def frame(v, st, cols):
                 ch = LIGHT if lit else DARK
             cells.append(ch * w)
         lead = "▸" if i == st["sel"] else " "
-        out.append(f"{lead}{mark}{name[:9]:<9} " + "".join(cells))
+        out.append(f"{lead}{mark} {name[:9]:<9} " + "".join(cells))
 
     # A/B：整条走带就是选择器
     ab = [" "] * total
@@ -177,6 +177,11 @@ def frame(v, st, cols):
     tot = meter.total_secs()
     mark = "▶" if st["playing"] else "‖"
     ab_txt = f"A {st['a'] or '-'}  B {st['b'] or '-'}  loop {'on' if st['loop'] else 'off'}"
+    # 耳朵和图对不上时，第一个怀疑对象应该是"solo/mute 还开着"，所以把它写在明面上。
+    if st["solo"]:
+        ab_txt += "   solo " + "/".join(sorted(st["solo"]))
+    if st["mute"]:
+        ab_txt += "   mute " + "/".join(sorted(st["mute"]))
     out.append(
         f"  {mark} bar {bar}/{n}   {int(t // 60)}:{int(t % 60):02d}"
         f" / {int(tot // 60)}:{int(tot % 60):02d}   {ab_txt}"
@@ -214,6 +219,11 @@ KEYMAP = {
     "\x1b[1;2C": "fast-right",
     "\x1b[1;2D": "fast-left",
 }
+# 有些终端（application cursor mode）送的是 SS3 而不是 CSI：`\x1bOA` 而不是 `\x1b[A`。
+# 只认一种的表现是"方向键按了没反应"，而且看不出是终端的问题。
+KEYMAP.update({
+    "\x1bOA": "up", "\x1bOB": "down", "\x1bOC": "right", "\x1bOD": "left",
+})
 KEY_SEQS = frozenset(KEYMAP)
 
 
@@ -339,11 +349,21 @@ def beat_secs(meter, b):
     return meter.bar_secs(b) / meter[b].beats
 
 
+KEYS = frozenset({
+    "up", "down", "left", "right", "fast-left", "fast-right", "beat-left", "beat-right",
+    "space", "[", "]", "l", "s", "m", "g", "q",
+})
+
+
 def step(v, st, key, secs, player, engine):
     """执行一个键。返回 True 表示退出。
 
     `--keys` 走的就是这个函数，所以自测覆盖的是真的那条路径。
     """
+    if key not in KEYS:
+        # 不认识的键：不改状态，也不重起播放——否则按错一个键声音就断一下，
+        # 而断的那一下会被当成"这个键有用"。
+        return False
     meter, n = v["meter"], len(secs)
     bar = bar_at(secs, st["t"])
     if key == "right":
@@ -441,11 +461,14 @@ def parse_args(argv):
         "keys": "",
         "draw": False,
         "loop": 1,
+        "selftest": False,
     }
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a == "--draw":
+        if a == "--selftest":
+            o["selftest"] = True
+        elif a == "--draw":
             o["draw"] = True
         elif a == "--no-audio":
             o["engine"] = "none"
@@ -465,8 +488,49 @@ def parse_args(argv):
     return o
 
 
+def selftest():
+    """能手算的键位样例。查的是 resolve_key —— 上一版就是在这里把 s/m/l/q 丢掉的。"""
+    n = 0
+    for raw, want in [
+        ("\x1b[A", "up"), ("\x1b[B", "down"), ("\x1b[C", "right"), ("\x1b[D", "left"),
+        ("\x1bOA", "up"), ("\x1bOB", "down"), ("\x1bOC", "right"), ("\x1bOD", "left"),
+        (" ", "space"), ("s", "s"), ("m", "m"), ("g", "g"), ("l", "l"),
+        ("[", "["), ("]", "]"), ("q", "q"),
+    ]:
+        got = resolve_key(raw)
+        assert got == want, f"resolve_key({raw!r}) = {got!r}，应该是 {want!r}"
+        n += 1
+
+    v = load(os.path.join(os.path.dirname(os.path.abspath(__file__)), "farewell-v3.yaml"))
+    st = make_state(v)
+    secs = [v["meter"].secs(b) for b in range(1, len(v["spec"]["harmony"]) + 1)]
+
+    step(v, st, "down", secs, None, "none")
+    assert st["sel"] == 1, st["sel"]
+    step(v, st, "up", secs, None, "none")
+    assert st["sel"] == 0, st["sel"]
+    step(v, st, "]", secs, None, "none")
+    assert st["b"] == 1, st["b"]
+    step(v, st, "l", secs, None, "none")
+    assert st["loop"] is True
+    n += 4
+
+    t0 = st["t"]
+    step(v, st, "right", secs, None, "none")
+    assert st["t"] > t0, (t0, st["t"])
+    t1 = st["t"]
+    assert step(v, st, "Z", secs, None, "none") is False
+    assert st["t"] == t1, "不认识的键不该动位置"
+    n += 2
+
+    print(f"{n}/{n} 通过")
+
+
 def main():
     o = parse_args(sys.argv[1:])
+    if o["selftest"]:
+        selftest()
+        return
     v = load(o["spec"])
     v["tmpdir"] = tempfile.mkdtemp(prefix="follow-")
     st = make_state(v)
@@ -526,9 +590,7 @@ def main():
             r, _w, _x = select.select([sys.stdin], [], [], 0.1)
             if not r:
                 continue
-            key = KEYMAP.get(_read_key(fd), "")
-            if not key:
-                continue
+            key = resolve_key(_read_key(fd))
             if key in ("q", "\x03"):
                 break
             if step(v, st, key, secs, player, o["engine"]):
@@ -539,6 +601,17 @@ def main():
         if player is not None:
             player.stop()
         shutil.rmtree(v["tmpdir"], ignore_errors=True)
+
+
+def resolve_key(raw):
+    """终端送来的一串字节 → 键名。
+
+    认不出来的**原样返回**，不要返回空串：之前这里写的是
+    `KEYMAP.get(key, "")`，于是 s / m / l / q 全部被当成"没按键"丢掉——
+    方向键和空格（在 KEYMAP 里）好使，其余全死，而界面照常刷新，
+    看起来就像"这些快捷键没什么用"。
+    """
+    return KEYMAP.get(raw, raw)
 
 
 def _read_key(fd):

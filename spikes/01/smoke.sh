@@ -45,6 +45,9 @@ run() {
 }
 
 run "render --selftest" "$PY" render.py --selftest
+# 键位表本身要被测：上一版 resolve_key 把 s/m/l/q 全吞了，而界面照常刷新，
+# 看起来就像"这些快捷键没什么用"。
+run "follow --selftest" "$PY" follow.py --selftest
 
 # 每首谱跑一遍全部入口。加了新谱就往这里加一行——
 # 一个入口只被一首谱覆盖过，等于没被覆盖（synth.py 就是这么坏掉的）。
