@@ -28,6 +28,7 @@
 
 ⚠️ 外部进程一律带 timeout。没有超时的那一次，一条永不返回的命令吃掉了整整一小时。
 """
+
 import os
 import shutil
 import subprocess
@@ -44,6 +45,7 @@ GM_FAILURES = (RuntimeError, OSError, subprocess.SubprocessError)
 def render_midi(spec_path, mid_path):
     """跑一遍和 render.py 相同的管线，只留 MIDI。"""
     import render
+
     spec = render.load_yaml(spec_path, "spec")
     _ens, insts = render.load_ensemble(spec, spec_path)
     meter = render.meter_of(spec)
@@ -91,9 +93,13 @@ def render_gm(mid_path, out_path, sf2=SF2, timeout=30, attempts=2):
             try:
                 r = subprocess.run(
                     [fs, "-a", "file", "-O", "s16", "-F", tmp, sf2, mid_path],
-                    env=_isolated_env(rt), stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout,
-                    check=False)
+                    env=_isolated_env(rt),
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=timeout,
+                    check=False,
+                )
             except subprocess.TimeoutExpired:
                 last = f"超时 {timeout}s"
                 if os.path.exists(tmp):
@@ -116,6 +122,7 @@ def render_gm(mid_path, out_path, sf2=SF2, timeout=30, attempts=2):
 
 def render_synth(spec_path, out_path):
     import synth
+
     return synth.render(spec_path, out_path)
 
 
@@ -126,7 +133,7 @@ def render(spec_path, out_path, engine="gm"):
         render_midi(spec_path, mid)
         try:
             return render_gm(mid, out_path), "gm"
-        except GM_FAILURES as e:                     # 不假装成功
+        except GM_FAILURES as e:  # 不假装成功
             print(f"  ! gm 引擎不可用（{e}），回落到 synth", file=sys.stderr)
     return render_synth(spec_path, out_path), "synth"
 
@@ -145,7 +152,7 @@ def main():
             engine = args[i + 1]
     path, used = render(spec_path, out, engine)
     size = os.path.getsize(path)
-    print(f"wrote {path}  ({size/1024:.0f} KB, engine={used})")
+    print(f"wrote {path}  ({size / 1024:.0f} KB, engine={used})")
 
 
 if __name__ == "__main__":

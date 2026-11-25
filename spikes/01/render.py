@@ -4,6 +4,7 @@
 编制是输入（ensembles/*.yaml + instruments/*.yaml），不是代码里的常量。
 除 PyYAML 外零依赖：内环必须能 headless 跑，2 秒内出声。
 """
+
 import bisect
 import itertools
 import os
@@ -32,6 +33,7 @@ def load_yaml(path, what) -> Any:
 
 # ---------- 编制（输入）----------
 
+
 def load_ensemble(spec, spec_path):
     """编制是输入参数：谁在场、什么音区、什么移调，全从 YAML 读。"""
     rel = spec.get("ensemble")
@@ -46,7 +48,7 @@ def load_ensemble(spec, spec_path):
         base = seat["instrument"]
         d = dict(load_yaml(os.path.join(inst_dir, base + ".yaml"), f"乐器 {base}"))
         d.update(seat.get("overrides") or {})
-        inst = seat.get("as") or base          # 座位可起别名：同一乐器坐两个人
+        inst = seat.get("as") or base  # 座位可起别名：同一乐器坐两个人
         if inst in insts:
             dup.append(inst)
         d["id"] = inst
@@ -55,7 +57,7 @@ def load_ensemble(spec, spec_path):
         if d.get("drum"):
             d["channel"] = 9
         else:
-            ch += (ch == 9)
+            ch += ch == 9
             d["channel"] = ch
             ch += 1
         d["seat"] = seat
@@ -66,6 +68,7 @@ def load_ensemble(spec, spec_path):
 
 
 # ---------- spec 展开 ----------
+
 
 def parse_bars(spec, total):
     if isinstance(spec, int):
@@ -81,7 +84,7 @@ def parse_bars(spec, total):
 # 4/4 里 `tick = (bar - 1) * grid * tps` 恒成立，所以写死了也没人发现。
 # 一旦有 7/8 这个等式就是错的——这不是加复杂度，是把一条假等式删掉。
 
-UNITS = (2, 4, 8, 16)          # 拍号分母：MIDI 只能表示 2 的幂
+UNITS = (2, 4, 8, 16)  # 拍号分母：MIDI 只能表示 2 的幂
 
 
 class Bar:
@@ -89,19 +92,27 @@ class Bar:
 
     # 不按字母排：这个顺序是“时间 → 拍号 → 推导量”，读的时候能顺着算一遍。
     __slots__ = (  # noqa: RUF023
-        "index", "start_tick", "ticks", "beats", "unit",
-        "grid", "step_ticks", "eighth", "group")
+        "index",
+        "start_tick",
+        "ticks",
+        "beats",
+        "unit",
+        "grid",
+        "step_ticks",
+        "eighth",
+        "group",
+    )
 
     def __init__(self, index, start_tick, beats, unit, grid, step_ticks, eighth, group):
         self.index = index
         self.start_tick = start_tick
         self.beats = beats
         self.unit = unit
-        self.grid = grid                 # 格子数 = beats * subdivision
-        self.step_ticks = step_ticks     # 一格多少 tick
-        self.ticks = grid * step_ticks   # 一小节多少 tick（推导，不写死）
-        self.eighth = eighth             # 一个八分音符占几格（arp 之类要用）
-        self.group = group               # 小节内分组 [3, 2, 3]，没有就是 None
+        self.grid = grid  # 格子数 = beats * subdivision
+        self.step_ticks = step_ticks  # 一格多少 tick
+        self.ticks = grid * step_ticks  # 一小节多少 tick（推导，不写死）
+        self.eighth = eighth  # 一个八分音符占几格（arp 之类要用）
+        self.group = group  # 小节内分组 [3, 2, 3]，没有就是 None
 
     def __repr__(self):
         return f"<bar {self.index} {self.beats}/{self.unit} @{self.start_tick}>"
@@ -167,14 +178,14 @@ def meter_of(spec):
     if div % sub:
         raise SystemExit(f"meta.division={div} 不能被 subdivision={sub} 整除")
     segs = meta.get("meter") or [{"bar": 1, "beats": 4, "unit": 4}]
-    if (isinstance(segs, list) and len(segs) == 2
-            and all(isinstance(x, int) for x in segs)):
+    if isinstance(segs, list) and len(segs) == 2 and all(isinstance(x, int) for x in segs):
         # 旧写法 meter: [4, 4] —— 只能表达单一拍号，等价于一段。
         segs = [{"bar": 1, "beats": segs[0], "unit": segs[1]}]
     if not isinstance(segs, list) or not all(isinstance(s, dict) for s in segs):
         raise SystemExit(
             f"meta.meter 要是一串段落，比如 [{{bar: 1, beats: 4, unit: 4}}]，"
-            f"拿到 {segs!r}。只写一行会被当成 dict。")
+            f"拿到 {segs!r}。只写一行会被当成 dict。"
+        )
 
     blocks = []
     for seg in segs:
@@ -189,15 +200,16 @@ def meter_of(spec):
         if div * 4 % (unit * sub):
             raise SystemExit(
                 f"bar {b0}: division={div} 表示不了 {beats}/{unit} 的第 {sub} 刀"
-                f"——{div * 4} 不能被 {unit * sub} 整除。换 division 或 subdivision。")
+                f"——{div * 4} 不能被 {unit * sub} 整除。换 division 或 subdivision。"
+            )
         group = seg.get("group")
         if group is not None:
-            if not isinstance(group, list) or any(
-                    not isinstance(g, int) or g < 1 for g in group):
+            if not isinstance(group, list) or any(not isinstance(g, int) or g < 1 for g in group):
                 raise SystemExit(f"bar {b0}: group={group!r} 要是正整数的列表，比如 [3, 2, 3]")
             if sum(group) != beats:
                 raise SystemExit(
-                    f"bar {b0}: group {group} 加起来是 {sum(group)} 拍，但这一小节有 {beats} 拍")
+                    f"bar {b0}: group {group} 加起来是 {sum(group)} 拍，但这一小节有 {beats} 拍"
+                )
         step = div * 4 // (unit * sub)
         blocks.append((b0, beats, unit, group, step, beats * sub, max(1, (div // 2) // step)))
 
@@ -206,7 +218,8 @@ def meter_of(spec):
     for i in range(1, len(blocks)):
         if blocks[i][0] <= blocks[i - 1][0]:
             raise SystemExit(
-                f"拍号段落顺序不对或重叠：bar {blocks[i][0]} 排在 bar {blocks[i - 1][0]} 之后")
+                f"拍号段落顺序不对或重叠：bar {blocks[i][0]} 排在 bar {blocks[i - 1][0]} 之后"
+            )
 
     out, tick = [], 0
     for i, (b0, beats, unit, group, step, grid, eighth) in enumerate(blocks):
@@ -222,7 +235,8 @@ def meter_of(spec):
         if grids != [int(meta["grid"])]:
             raise SystemExit(
                 f"meta.grid={meta['grid']} 和推导出来的格子数 {grids} 不一致——"
-                f"grid 现在由 beats × subdivision 推导，删掉它（或改 subdivision）")
+                f"grid 现在由 beats × subdivision 推导，删掉它（或改 subdivision）"
+            )
     return Meter(out, tempo=int(meta["tempo"]), division=div)
 
 
@@ -248,8 +262,10 @@ def resolve(pitch, h, part, prev=None):
     base = (part["base_octave"] + 1) * 12
     root_pc = h["chord"][0]
     root = base + root_pc
+
     def iv(pc):
         return (pc - root_pc) % 12
+
     if pitch == "root":
         p = (part["base_octave"] + 1) * 12 + h["bass"]
         while p < base:
@@ -265,9 +281,9 @@ def resolve(pitch, h, part, prev=None):
         return [root, root + 7]
     if pitch == "chord":
         return [root + iv(pc) for pc in h["chord"]]
-    if pitch == "wide":                     # 左手根音 + 右手和弦（贴着旋律音区，容易糊）
+    if pitch == "wide":  # 左手根音 + 右手和弦（贴着旋律音区，容易糊）
         return [root - 12] + [root + iv(pc) for pc in h["chord"]]
-    if pitch == "frame":                    # 框：低音在下、和弦整体上一个八度，把中频让给旋律
+    if pitch == "frame":  # 框：低音在下、和弦整体上一个八度，把中频让给旋律
         return [root - 12] + [root + 12 + iv(pc) for pc in h["chord"]]
     if pitch == "arp":
         return [root + iv(pc) for pc in h["chord"]]
@@ -288,7 +304,8 @@ def onsets(rhythm, grid, where="节奏串"):
     if len(rhythm) != grid:
         raise SystemExit(
             f"{where}: 节奏串 {rhythm!r} 有 {len(rhythm)} 格，这一小节要 {grid} 格"
-            f"（Diff 用 '-' 补齐或删短）")
+            f"（Diff 用 '-' 补齐或删短）"
+        )
     bad = sorted(set(rhythm) - set("xX-."))
     if bad:
         raise SystemExit(f"{where}: 节奏串里有不认识的字符 {bad}（只认 x / - / .）")
@@ -302,6 +319,7 @@ def runs(rhythm, grid, where="节奏串"):
 
 # ---------- 变换算子 ----------
 # 位移一律显式（C16）：register 只决定简谱音级落在哪个八度，不参与 use 的位移。
+
 
 def _pairs(ops):
     """op 列表允许混写 `retrograde` 与 `{octave: -1}`。"""
@@ -363,19 +381,20 @@ def _augment(seq, k):
 def _diminish(seq, k, step=1):
     k = _int_arg("diminish", k)
     out = []
-    for (a, d, ps, v) in seq:
+    for a, d, ps, v in seq:
         # 除不尽指的是**格数**除不尽，不是 tick 数——tick 总是能被小整数整除，
         # 光看 tick 会把这个拒绝变成“总能通过”，静默产生网格外的音。
         if (a // step) % k or (d // step) % k:
-            raise SystemExit(f"diminish:{k} 在 {a // step}:{d // step} 格上除不尽——"
-                             f"网格太粗，这个变换写不出来")
+            raise SystemExit(
+                f"diminish:{k} 在 {a // step}:{d // step} 格上除不尽——网格太粗，这个变换写不出来"
+            )
         out.append((a // k, d // k, ps, v))
     return out
 
 
 def _fragment(seq, rng):
     a, b = rng
-    sub = seq[a:b + 1]
+    sub = seq[a : b + 1]
     if not sub:
         return []
     base = min(x[0] for x in sub)
@@ -393,14 +412,21 @@ def _sequence(seq, arg):
     span = max(a + d for a, d, _p, _v in seq)
     out = []
     for i in range(times):
-        for (a, d, ps, v) in seq:
+        for a, d, ps, v in seq:
             out.append((a + i * span, d, [p + i * step for p in ps], v))
     return out
 
 
-OPS = {"octave": _octave, "transpose": _transpose, "retrograde": _retrograde,
-       "invert": _invert, "augment": _augment, "diminish": _diminish,
-       "fragment": _fragment, "sequence": _sequence}
+OPS = {
+    "octave": _octave,
+    "transpose": _transpose,
+    "retrograde": _retrograde,
+    "invert": _invert,
+    "augment": _augment,
+    "diminish": _diminish,
+    "fragment": _fragment,
+    "sequence": _sequence,
+}
 
 
 def apply_ops(seq, ops, step=1):
@@ -458,7 +484,8 @@ def build_material(spec, meter):
                 what = "用 repeat 的" if seg.get("repeat") else "写 degrees 的"
                 raise SystemExit(
                     f"素材 {tr['id']} {seg['bars']}: 这段跨了不同拍号（格子数 {grids}）——"
-                    f"{what}段只能落在同一种拍号里，请拆成两段")
+                    f"{what}段只能落在同一种拍号里，请拆成两段"
+                )
 
             if "use" in seg:
                 src = tracks.get(seg["use"])
@@ -466,13 +493,28 @@ def build_material(spec, meter):
                     raise SystemExit(f"素材 {tr['id']} 引用了尚未定义的轨 {seg['use']}")
                 src_bars = parse_bars(seg.get("from", seg["bars"]), None)
                 sbase = meter[src_bars[0]].start_tick
-                seq = [((meter[b].start_tick - sbase) + st * meter[b].step_ticks,
-                        du * meter[b].step_ticks, ps, v)
-                       for b in src_bars for (st, du, ps, v) in src["events"].get(b, [])]
+                seq = [
+                    (
+                        (meter[b].start_tick - sbase) + st * meter[b].step_ticks,
+                        du * meter[b].step_ticks,
+                        ps,
+                        v,
+                    )
+                    for b in src_bars
+                    for (st, du, ps, v) in src["events"].get(b, [])
+                ]
                 semis, pure = op_shift(ops)
-                lineage.append({"from": seg["use"], "from_bars": seg.get("from", seg["bars"]),
-                                "bars": seg["bars"], "ops": ops,
-                                "semitones": semis, "pure": pure, "tonal": semis % 12 != 0})
+                lineage.append(
+                    {
+                        "from": seg["use"],
+                        "from_bars": seg.get("from", seg["bars"]),
+                        "bars": seg["bars"],
+                        "ops": ops,
+                        "semitones": semis,
+                        "pure": pure,
+                        "tonal": semis % 12 != 0,
+                    }
+                )
             elif "degrees" in seg:
                 seq, step = [], 0
                 for tok in seg["degrees"].split():
@@ -482,19 +524,37 @@ def build_material(spec, meter):
                         shift += 7 if deg_s[-1] in "'\u2019" else -7
                         deg_s = deg_s[:-1]
                     span = int(dur) * start.step_ticks
-                    if int(deg_s) == 0:            # 0 = 休止：只推进时间
+                    if int(deg_s) == 0:  # 0 = 休止：只推进时间
                         step += span
                         continue
-                    seq.append((step, span, [scale_degree(int(deg_s) + shift, reg)],
-                                seg.get("velocity", 80)))
+                    seq.append(
+                        (
+                            step,
+                            span,
+                            [scale_degree(int(deg_s) + shift, reg)],
+                            seg.get("velocity", 80),
+                        )
+                    )
                     step += span
                 if seg.get("repeat"):
                     # 一小节素材，逐小节重复（嗡鸣、固定音型）。
                     # 没有这一条就只能写 32 行一模一样的时间线。
-                    seq = [(a + (meter[b].start_tick - start.start_tick), du, ps, v)
-                           for b in target for (a, du, ps, v) in seq]
-                lineage.append({"from": None, "from_bars": None, "bars": seg["bars"],
-                                "ops": ops, "semitones": 0, "pure": False, "tonal": False})
+                    seq = [
+                        (a + (meter[b].start_tick - start.start_tick), du, ps, v)
+                        for b in target
+                        for (a, du, ps, v) in seq
+                    ]
+                lineage.append(
+                    {
+                        "from": None,
+                        "from_bars": None,
+                        "bars": seg["bars"],
+                        "ops": ops,
+                        "semitones": 0,
+                        "pure": False,
+                        "tonal": False,
+                    }
+                )
             else:
                 raise SystemExit(f"素材 {tr['id']} 的 timeline 段既无 degrees 也无 use: {seg}")
 
@@ -506,12 +566,15 @@ def build_material(spec, meter):
                 if need > len(target):
                     raise SystemExit(
                         f"素材 {tr['id']} {seg['bars']}: 变换后需要 {need} 小节，"
-                        f"但只给了 {len(target)} 小节")
+                        f"但只给了 {len(target)} 小节"
+                    )
                 if need < len(target):
-                    warns.append(f"素材 {tr['id']} {seg['bars']}: 变换只填满 {need}/{len(target)} 小节，"
-                                 f"其余为静默")
+                    warns.append(
+                        f"素材 {tr['id']} {seg['bars']}: 变换只填满 {need}/{len(target)} 小节，"
+                        f"其余为静默"
+                    )
             base = start.start_tick
-            for (a, du, ps, v) in seq:
+            for a, du, ps, v in seq:
                 if a < 0:
                     raise SystemExit(f"素材 {tr['id']} {seg['bars']}: 变换产生了负位置")
                 bar = meter.at_tick(base + a)
@@ -520,12 +583,18 @@ def build_material(spec, meter):
                     raise SystemExit(
                         f"素材 {tr['id']} {seg['bars']}: 落在 bar {bar.index}"
                         f"（{bar.beats}/{bar.unit}，一格 {bar.step_ticks} tick）上的音不在格上"
-                        f"（偏移 {off}、时值 {du} tick）")
+                        f"（偏移 {off}、时值 {du} tick）"
+                    )
                 ev.setdefault(bar.index, []).append(
-                    (off // bar.step_ticks, du // bar.step_ticks, ps, v))
+                    (off // bar.step_ticks, du // bar.step_ticks, ps, v)
+                )
 
-        tracks[tr["id"]] = {"register": reg, "events": ev,
-                             "theme": bool(tr.get("theme")), "lineage": lineage}
+        tracks[tr["id"]] = {
+            "register": reg,
+            "events": ev,
+            "theme": bool(tr.get("theme")),
+            "lineage": lineage,
+        }
     return tracks, warns
 
 
@@ -551,7 +620,8 @@ def expand(spec, insts, meter):
             if part.get("place") == "auto":
                 raise SystemExit(
                     f"{part['name']}: 承载素材的声部不能用 place: auto —— "
-                    f"音区位移必须显式声明（C16）")
+                    f"音区位移必须显式声明（C16）"
+                )
             tr = tracks.get(seg["track"])
             if tr is None:
                 raise SystemExit(f"{part['name']}: 承载了不存在的素材轨 {seg['track']}")
@@ -559,7 +629,7 @@ def expand(spec, insts, meter):
             if tr["theme"]:
                 part["_theme"] = True
             for b in parse_bars(seg["bars"], total):
-                for (st, du, ps, v) in tr["events"].get(b, []):
+                for st, du, ps, v in tr["events"].get(b, []):
                     bars.setdefault(b, []).append((part, st, du, ps, v))
 
         for seg in part.get("segments") or []:
@@ -583,16 +653,23 @@ def expand(spec, insts, meter):
                         while deg_s and deg_s[-1] in "'\u2019,":
                             shift += 7 if deg_s[-1] in "'\u2019" else -7
                             deg_s = deg_s[:-1]
-                        if int(deg_s) == 0:        # 0 = 休止
+                        if int(deg_s) == 0:  # 0 = 休止
                             step += int(dur)
                             continue
-                        evs.append((step, int(dur),
-                                    [scale_degree(int(deg_s) + shift, part["base_octave"], tr)], vel))
+                        evs.append(
+                            (
+                                step,
+                                int(dur),
+                                [scale_degree(int(deg_s) + shift, part["base_octave"], tr)],
+                                vel,
+                            )
+                        )
                         step += int(dur)
                     if step > bar.grid:
                         raise SystemExit(
                             f"{where}: degrees 占了 {step} 格，但这一小节只有 {bar.grid} 格"
-                            f"（{bar.beats}/{bar.unit}）")
+                            f"（{bar.beats}/{bar.unit}）"
+                        )
                 elif "pattern" in seg:
                     layers = [(seg["pattern"], seg.get("velocity", 80))]
                     if "also" in seg:
@@ -622,6 +699,7 @@ def expand(spec, insts, meter):
 
 # ---------- 音区：推荐 / 人为覆盖 / 自动择位 ----------
 
+
 def autoplace(bars, parts):
     """place: auto —— 选一个八度，使材料尽量待在**舒适区**里（C1 的“推荐”）。"""
     for part in parts:
@@ -633,27 +711,33 @@ def autoplace(bars, parts):
         for shift in range(-24, 25, 12):
             cost = 0
             for evs in bars.values():
-                for (p, _st, du, ps, _v) in evs:
+                for p, _st, du, ps, _v in evs:
                     if p is not part:
                         continue
                     for x in ps:
                         y = x + shift
-                        cost += du * (100 if not (lo_r <= y <= hi_r) else
-                                      (1 if not (lo_c <= y <= hi_c) else 0))
+                        cost += du * (
+                            100
+                            if not (lo_r <= y <= hi_r)
+                            else (1 if not (lo_c <= y <= hi_c) else 0)
+                        )
             if best is None or cost < best[0]:
                 best = (cost, shift)
-        if best is None:                 # 这个座位一个小节都没发声：没什么可择位的
+        if best is None:  # 这个座位一个小节都没发声：没什么可择位的
             continue
         shift = best[1]
         if shift:
             part["_shift"] = shift
             for b in bars:
-                bars[b] = [(p, st, du, ([x + shift for x in ps] if p is part else ps), v)
-                           for (p, st, du, ps, v) in bars[b]]
+                bars[b] = [
+                    (p, st, du, ([x + shift for x in ps] if p is part else ps), v)
+                    for (p, st, du, ps, v) in bars[b]
+                ]
     return bars
 
 
 # ---------- 在场路径 ----------
+
 
 def apply_presence(spec, bars):
     ladder = spec.get("presence")
@@ -664,14 +748,14 @@ def apply_presence(spec, bars):
         for b in parse_bars(seg["bars"], len(spec["harmony"])):
             declared[b] = set(seg["parts"])
     out, issues = {}, []
-    silent = {}          # 声明在场却一小节没响：报钟、报时这类乐器本来就该这样
+    silent = {}  # 声明在场却一小节没响：报钟、报时这类乐器本来就该这样
     for b, evs in bars.items():
         allowed = declared.get(b)
         if allowed is None:
             out[b] = evs
             continue
         kept = [e for e in evs if e[0]["name"] in allowed]
-        for (part, *_r) in evs:
+        for part, *_r in evs:
             if part["name"] not in allowed:
                 issues.append(f"bar {b}: {part['name']} 有音符但不在场路径里（已静音）")
         for name in sorted(allowed):
@@ -687,7 +771,9 @@ def apply_presence(spec, bars):
         for b in bs + [None]:
             if run and (b is None or b != run[-1] + 1):
                 if len(run) >= 4:
-                    issues.append(f"bar {run[0]}-{run[-1]}: {name} 声明在场但连续 {len(run)} 小节没有音符")
+                    issues.append(
+                        f"bar {run[0]}-{run[-1]}: {name} 声明在场但连续 {len(run)} 小节没有音符"
+                    )
                 run = []
             if b is not None:
                 run.append(b)
@@ -696,49 +782,56 @@ def apply_presence(spec, bars):
 
 # ---------- 检查 ----------
 
+
 def check_harmony(spec, bars, parts):
     problems = []
     skip = {p["id"] for p in parts if p.get("_carrier")}
     for b, evs in bars.items():
         h = chord_at(spec["harmony"], b)
         allowed = {pc % 12 for pc in h["chord"]} | {h["bass"] % 12}
-        for (part, _st, _du, pitches, _vel) in evs:
+        for part, _st, _du, pitches, _vel in evs:
             if part.get("drum") or part["id"] in skip:
                 continue
             for p in pitches:
                 if p % 12 not in allowed:
-                    problems.append(
-                        f"bar {b} {part['name']}: {note_name(p)} 不属于 {h['name']}")
+                    problems.append(f"bar {b} {part['name']}: {note_name(p)} 不属于 {h['name']}")
     return sorted(set(problems))
 
 
 def lint(bars, parts):
     errors, warns = [], []
     for b in sorted(bars):
-        for (part, _st, _du, pitches, _vel) in bars[b]:
+        for part, _st, _du, pitches, _vel in bars[b]:
             if part.get("drum") or not part.get("range"):
                 continue
             lo_r, hi_r = part["range"]
             lo_c, hi_c = part.get("comfort") or (lo_r, hi_r)
             for p in pitches:
                 if not (lo_r <= p <= hi_r):
-                    errors.append(f"bar {b} {part['name']}: {note_name(p)} 超出可演奏音域 "
-                                  f"{note_name(lo_r)}–{note_name(hi_r)}")
+                    errors.append(
+                        f"bar {b} {part['name']}: {note_name(p)} 超出可演奏音域 "
+                        f"{note_name(lo_r)}–{note_name(hi_r)}"
+                    )
                 elif not (lo_c <= p <= hi_c):
-                    warns.append(f"bar {b} {part['name']}: {note_name(p)} 超出舒适区 "
-                                 f"{note_name(lo_c)}–{note_name(hi_c)}")
+                    warns.append(
+                        f"bar {b} {part['name']}: {note_name(p)} 超出舒适区 "
+                        f"{note_name(lo_c)}–{note_name(hi_c)}"
+                    )
     for part in parts:
         seen = {}
         for seg in part.get("segments") or []:
             for b in parse_bars(seg["bars"], max(bars) or 1):
                 if b in seen and not (seen[b].get("rest") and seg.get("rest")):
-                    errors.append(f"bar {b} {part['name']}: 段落重叠"
-                                  f"（{seen[b].get('bars')} 与 {seg.get('bars')}）")
+                    errors.append(
+                        f"bar {b} {part['name']}: 段落重叠"
+                        f"（{seen[b].get('bars')} 与 {seg.get('bars')}）"
+                    )
                 seen[b] = seg
     return sorted(set(errors)), sorted(set(warns))
 
 
 # ---------- 素材血统 ----------
+
 
 def _fmt_op(name, arg):
     if arg is None:
@@ -771,6 +864,7 @@ def lineage(tracks):
 
 # ---------- 自检 ----------
 
+
 def selftest():
     """每个变换配一条小到能手算的样例（R7：测量本身会撒谎）。"""
     seq = [(0, 4, [60], 80), (4, 4, [64], 80), (8, 8, [67], 80)]
@@ -782,26 +876,40 @@ def selftest():
         ([{"augment": 2}], [(0, 8, [60], 80), (8, 8, [64], 80), (16, 16, [67], 80)]),
         ([{"diminish": 2}], [(0, 2, [60], 80), (2, 2, [64], 80), (4, 4, [67], 80)]),
         ([{"fragment": [1, 2]}], [(0, 4, [64], 80), (4, 8, [67], 80)]),
-        ([{"sequence": {"step": 2, "times": 2}}],
-         [(0, 4, [60], 80), (4, 4, [64], 80), (8, 8, [67], 80),
-          (16, 4, [62], 80), (20, 4, [66], 80), (24, 8, [69], 80)]),
-        ([{"transpose": 2}, "retrograde"],
-         [(0, 8, [69], 80), (8, 4, [66], 80), (12, 4, [62], 80)]),
+        (
+            [{"sequence": {"step": 2, "times": 2}}],
+            [
+                (0, 4, [60], 80),
+                (4, 4, [64], 80),
+                (8, 8, [67], 80),
+                (16, 4, [62], 80),
+                (20, 4, [66], 80),
+                (24, 8, [69], 80),
+            ],
+        ),
+        ([{"transpose": 2}, "retrograde"], [(0, 8, [69], 80), (8, 4, [66], 80), (12, 4, [62], 80)]),
     ]
     bad = 0
     for ops, want in cases:
         got = apply_ops(list(seq), ops)
         ok = got == want
         bad += not ok
-        print(f"  {'✓' if ok else '✗'} {[ _fmt_op(n, a) for n, a in _pairs(ops)]}")
+        print(f"  {'✓' if ok else '✗'} {[_fmt_op(n, a) for n, a in _pairs(ops)]}")
         if not ok:
             print(f"      want {want}\n      got  {got}")
     # 只渲染后半段时不能发出负 tick：负 delta-time 会得到畸形 MIDI，
     # fluidsynth 读它的时候不报错、不返回，就那么挂着（踩过一次）。
-    spec = {"meta": {"tempo": 120, "division": 480, "subdivision": 4,
-                     "meter": [{"bar": 1, "beats": 4, "unit": 4}], "title": "t"},
-            "harmony": [{"name": "C5"}] * 4,
-            "color": [{"bars": "1-4", "reverb": [40, 120], "brightness": 90}]}
+    spec = {
+        "meta": {
+            "tempo": 120,
+            "division": 480,
+            "subdivision": 4,
+            "meter": [{"bar": 1, "beats": 4, "unit": 4}],
+            "title": "t",
+        },
+        "harmony": [{"name": "C5"}] * 4,
+        "color": [{"bars": "1-4", "reverb": [40, 120], "brightness": 90}],
+    }
     evs = color_events(spec, 3, meter_of(spec))
     ok = bool(evs) and min(t for (t, _c, _v) in evs) >= 0 and min(t for (t, _c, _v) in evs) == 0
     bad += not ok
@@ -809,18 +917,31 @@ def selftest():
 
     # 奇数拍：手算得出来，所以能验。4/4 四小节（1920 tick）→ 7/8 四小节（1680）→
     # 5/4（2400）→ 11/8（2640）。格子数分别是 16 / 28 / 20 / 44。
-    odd = {"meta": {"tempo": 92, "division": 480, "subdivision": 4,
-                    "meter": [{"bar": 1, "beats": 4, "unit": 4},
-                              {"bar": 5, "beats": 7, "unit": 8, "group": [2, 2, 3]},
-                              {"bar": 9, "beats": 5, "unit": 4, "group": [3, 2]},
-                              {"bar": 13, "beats": 11, "unit": 8, "group": [3, 2, 3, 3]}],
-                    "title": "t"},
-           "harmony": [{"name": "C5"}] * 16}
+    odd = {
+        "meta": {
+            "tempo": 92,
+            "division": 480,
+            "subdivision": 4,
+            "meter": [
+                {"bar": 1, "beats": 4, "unit": 4},
+                {"bar": 5, "beats": 7, "unit": 8, "group": [2, 2, 3]},
+                {"bar": 9, "beats": 5, "unit": 4, "group": [3, 2]},
+                {"bar": 13, "beats": 11, "unit": 8, "group": [3, 2, 3, 3]},
+            ],
+            "title": "t",
+        },
+        "harmony": [{"name": "C5"}] * 16,
+    }
     m = meter_of(odd)
-    want = [(1, 0, 1920, 16, 120), (5, 7680, 1680, 28, 60),
-            (9, 14400, 2400, 20, 120), (13, 24000, 2640, 44, 60)]
-    got = [(b.index, b.start_tick, b.ticks, b.grid, b.step_ticks)
-           for b in (m[1], m[5], m[9], m[13])]
+    want = [
+        (1, 0, 1920, 16, 120),
+        (5, 7680, 1680, 28, 60),
+        (9, 14400, 2400, 20, 120),
+        (13, 24000, 2640, 44, 60),
+    ]
+    got = [
+        (b.index, b.start_tick, b.ticks, b.grid, b.step_ticks) for b in (m[1], m[5], m[9], m[13])
+    ]
     ok = got == want
     bad += not ok
     print(f"  {'✓' if ok else '✗'} 拍号 4/4→7/8→5/4→11/8：起点 tick / 小节点数 / 格子数 / 步长")
@@ -828,10 +949,26 @@ def selftest():
         print(f"      want {want}\n      got  {got}")
     # 小节长度不等时，按 tick 反查必须找对小节（7/8 和 5/4 边界最容易差一格）。
     # 4/4 四小节 0..7679，7/8 四小节 7680..14399，5/4 四小节 14400..23999，11/8 24000..
-    probes = [(0, 1), (1919, 1), (1920, 2), (5760, 4), (7679, 4),
-              (7680, 5), (9359, 5), (9360, 6), (14399, 8),
-              (14400, 9), (16799, 9), (16800, 10), (23999, 12),
-              (24000, 13), (26639, 13), (26640, 14), (31919, 15), (31920, 16)]
+    probes = [
+        (0, 1),
+        (1919, 1),
+        (1920, 2),
+        (5760, 4),
+        (7679, 4),
+        (7680, 5),
+        (9359, 5),
+        (9360, 6),
+        (14399, 8),
+        (14400, 9),
+        (16799, 9),
+        (16800, 10),
+        (23999, 12),
+        (24000, 13),
+        (26639, 13),
+        (26640, 14),
+        (31919, 15),
+        (31920, 16),
+    ]
     wrong = [(t, b.index) for t, want_b in probes for b in [m.at_tick(t)] if b.index != want_b]
     bad += len(wrong) > 0
     print(f"  {'✓' if not wrong else '✗'} 按 tick 反查小节（边界差一格会全错）")
@@ -843,13 +980,16 @@ def selftest():
         ("group 加不起来", [{"bar": 1, "beats": 7, "unit": 8, "group": [2, 2, 2]}]),
         ("分母不是 2 的幂", [{"bar": 1, "beats": 3, "unit": 3}]),
         ("不从第 1 小节开始", [{"bar": 2, "beats": 4, "unit": 4}]),
-        ("段落起点重复", [{"bar": 1, "beats": 4, "unit": 4},
-                     {"bar": 1, "beats": 3, "unit": 4}]),
+        ("段落起点重复", [{"bar": 1, "beats": 4, "unit": 4}, {"bar": 1, "beats": 3, "unit": 4}]),
     ]
     for label, segs in rejects:
         try:
-            meter_of({"meta": {"tempo": 92, "division": 480, "meter": segs},
-                      "harmony": [{"name": "C5"}] * 8})
+            meter_of(
+                {
+                    "meta": {"tempo": 92, "division": 480, "meter": segs},
+                    "harmony": [{"name": "C5"}] * 8,
+                }
+            )
         except SystemExit:
             print(f"  ✓ 拒绝：{label}")
         else:
@@ -857,8 +997,12 @@ def selftest():
             print(f"  ✗ 没有拒绝：{label}")
 
     # 节奏串长度不对必须拒绝：以前会静默补齐/截断。
-    for label, r, g in (("短了", "x" * 12, 16), ("长了", "x" * 20, 16),
-                        ("乱字符", "x" * 15 + "z", 16), ("正好", "x" * 14 + "--", 16)):
+    for label, r, g in (
+        ("短了", "x" * 12, 16),
+        ("长了", "x" * 20, 16),
+        ("乱字符", "x" * 15 + "z", 16),
+        ("正好", "x" * 14 + "--", 16),
+    ):
         try:
             runs(r, g, "selftest")
         except SystemExit:
@@ -871,8 +1015,10 @@ def selftest():
             print(f"  {'✓' if ok else '✗'} 节奏串{label}（{g} 格）没有拒绝")
 
     # guide 只校验结构，不校验内容。结构错了就是错了：锚点越界、不递增、空句子。
-    gspec = {"meta": {"tempo": 92, "division": 480, "meter": [4, 4]},
-             "harmony": [{"name": "C5"}] * 8}
+    gspec = {
+        "meta": {"tempo": 92, "division": 480, "meter": [4, 4]},
+        "harmony": [{"name": "C5"}] * 8,
+    }
     grejects = [
         ("锚点越界", [{"bar": 9, "text": "x"}]),
         ("不递增", [{"bar": 5, "text": "x"}, {"bar": 5, "text": "y"}]),
@@ -886,8 +1032,14 @@ def selftest():
         else:
             bad += 1
             print(f"  ✗ 没有拒绝：guide {label}")
-    gok = {**gspec, "guide": {"summary": " s ", "intension": [" i "],
-                               "beats": [{"bar": 1, "text": " a "}, {"bar": 5, "text": " b "}]}}
+    gok = {
+        **gspec,
+        "guide": {
+            "summary": " s ",
+            "intension": [" i "],
+            "beats": [{"bar": 1, "text": " a "}, {"bar": 5, "text": " b "}],
+        },
+    }
     ok = guide_of(gok) == ("s", ["i"], [(1, "a"), (5, "b")])
     bad += not ok
     print(f"  {'✓' if ok else '✗'} guide 正常读取（首尾空白去掉，顺序保留）")
@@ -899,18 +1051,23 @@ def selftest():
 
 # ---------- 演奏可行性（把 override 变成可量化的东西）----------
 
+
 def report(bars, parts, meter):
     """每条都是可量的：舒适区时长占比、最长连续、大跳、最高音。"""
     rows = []
     for part in parts:
-        evs = [(b, st, du, ps) for b in sorted(bars)
-               for (p, st, du, ps, v) in bars[b] if p is part]
+        evs = [(b, st, du, ps) for b in sorted(bars) for (p, st, du, ps, v) in bars[b] if p is part]
         if not evs or part.get("drum"):
             continue
         # tick 而不是格数：拍号一变，一格的长度就变了，累加格数会得到假的拍数。
-        iv = sorted((meter[b].start_tick + st * meter[b].step_ticks,
-                     meter[b].start_tick + (st + du) * meter[b].step_ticks, ps)
-                    for b, st, du, ps in evs)
+        iv = sorted(
+            (
+                meter[b].start_tick + st * meter[b].step_ticks,
+                meter[b].start_tick + (st + du) * meter[b].step_ticks,
+                ps,
+            )
+            for b, st, du, ps in evs
+        )
         # 合并重叠 -> 连续演奏段
         runs, cur = [], None
         for a, z, ps in iv:
@@ -934,10 +1091,8 @@ def report(bars, parts, meter):
 
         lo_r, hi_r = part["range"]
         lo_c, hi_c = part.get("comfort") or (lo_r, hi_r)
-        out_c = sum(beats(z - a) for a, z, ps in runs
-                    if any(not (lo_c <= x <= hi_c) for x in ps))
-        out_r = sum(beats(z - a) for a, z, ps in runs
-                    if any(not (lo_r <= x <= hi_r) for x in ps))
+        out_c = sum(beats(z - a) for a, z, ps in runs if any(not (lo_c <= x <= hi_c) for x in ps))
+        out_r = sum(beats(z - a) for a, z, ps in runs if any(not (lo_r <= x <= hi_r) for x in ps))
 
         leaps, top = 0, None
         if part.get("monophonic"):
@@ -946,28 +1101,40 @@ def report(bars, parts, meter):
         top = max((x for *_r, ps in evs for x in ps), default=None)
 
         cap = (part.get("stamina") or {}).get("max_continuous_beats")
-        rows.append({
-            "name": part["name"], "total": total, "longest": longest, "cap": cap,
-            "over": longest > cap if cap else False,
-            "comfort": 100 * (1 - out_c / total) if total else 100,
-            "range_bad": out_r,
-            "leaps": leaps, "top": note_name(top) if top is not None else "—",
-        })
+        rows.append(
+            {
+                "name": part["name"],
+                "total": total,
+                "longest": longest,
+                "cap": cap,
+                "over": longest > cap if cap else False,
+                "comfort": 100 * (1 - out_c / total) if total else 100,
+                "range_bad": out_r,
+                "leaps": leaps,
+                "top": note_name(top) if top is not None else "—",
+            }
+        )
     if not rows:
         return
     print("\n  演奏可行性（每一条都是量的，不是形容词）:")
-    print(f"    {'声部':<16}{'发声':>6}{'连续/上限':>12}{'舒适区':>8}{'越域':>7}{'大跳':>6}{'最高':>7}")
+    print(
+        f"    {'声部':<16}{'发声':>6}{'连续/上限':>12}{'舒适区':>8}{'越域':>7}{'大跳':>6}{'最高':>7}"
+    )
     for r in rows:
         # 0.5 拍别显示成 0：机器音型每两格就停一次，最长连续真的只有半拍。
         def _b(v):
             return f"{v:.0f}" if abs(v - round(v)) < 0.05 else f"{v:.1f}"
+
         cap = f"{_b(r['longest'])}/{_b(r['cap'])}" if r["cap"] else f"{_b(r['longest'])}/—"
         flag = " ✗" if r["over"] else (" !" if r["comfort"] < 90 else "")
-        print(f"    {r['name'][:15]:<16}{r['total']:>5.0f}b{cap:>12}"
-              f"{r['comfort']:>7.0f}%{r['range_bad']:>6.0f}b{r['leaps']:>6}{r['top']:>7}{flag}")
+        print(
+            f"    {r['name'][:15]:<16}{r['total']:>5.0f}b{cap:>12}"
+            f"{r['comfort']:>7.0f}%{r['range_bad']:>6.0f}b{r['leaps']:>6}{r['top']:>7}{flag}"
+        )
 
 
 # ---------- MIDI ----------
+
 
 def vlq(n):
     out = [n & 0x7F]
@@ -1053,8 +1220,10 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
     div = meta["division"]
     t0 = meter[first].start_tick
 
-    conductor = [(0, 0, b"\xff\x51\x03" + int(60_000_000 / meta["tempo"]).to_bytes(3, "big")),
-                 (0, 2, meta_text(meta["title"]))]
+    conductor = [
+        (0, 0, b"\xff\x51\x03" + int(60_000_000 / meta["tempo"]).to_bytes(3, "big")),
+        (0, 2, meta_text(meta["title"])),
+    ]
     # 拍号可以变：每个变拍的小节都发一条（同拍号不重复）。
     last = None
     for b in meter.all():
@@ -1062,8 +1231,13 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
         if sig == last:
             continue
         last = sig
-        conductor.append((max(0, b.start_tick - t0), 1,
-                          b"\xff\x58\x04" + bytes([b.beats, b.unit.bit_length() - 1, 24, 8])))
+        conductor.append(
+            (
+                max(0, b.start_tick - t0),
+                1,
+                b"\xff\x58\x04" + bytes([b.beats, b.unit.bit_length() - 1, 24, 8]),
+            )
+        )
     tracks = [track_chunk(conductor)]
     lvl = dynamics_map(spec)
     colors = color_events(spec, first, meter)
@@ -1074,7 +1248,7 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
             continue
         ch = part["channel"]
         evs = [(0, 0, meta_text(part["name"])), (0, 1, bytes([0xC0 | ch, part["gm_program"]]))]
-        for (t, cc, val) in colors:
+        for t, cc, val in colors:
             evs.append((t, 1, bytes([0xB0 | ch, cc, val])))
         # 只渲染后半段时，窗口开始前最后一条力度要压到 0 号 tick，
         # 不然前几小节会用音源的默认音量（100），听起来像突然一记重音。
@@ -1085,7 +1259,7 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
             b = meter[bar]
             if bar in lvl and bar >= first:
                 evs.append((b.start_tick - t0, 1, bytes([0xB0 | ch, 7, int(lvl[bar] * 127)])))
-            for (p, st, du, pitches, vel) in bars[bar]:
+            for p, st, du, pitches, vel in bars[bar]:
                 if p is not part:
                     continue
                 s = b.start_tick - t0 + st * b.step_ticks
@@ -1095,12 +1269,18 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
                     evs.append((e, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
         tracks.append(track_chunk(evs))
 
-    header = (b"MThd" + (6).to_bytes(4, "big") + (1).to_bytes(2, "big")
-              + len(tracks).to_bytes(2, "big") + div.to_bytes(2, "big"))
+    header = (
+        b"MThd"
+        + (6).to_bytes(4, "big")
+        + (1).to_bytes(2, "big")
+        + len(tracks).to_bytes(2, "big")
+        + div.to_bytes(2, "big")
+    )
     return header + b"".join(tracks)
 
 
 # ---------- 输出 ----------
+
 
 def _sounding(bars, meter, b):
     """第 b 小节响着的声部（含从前一小节拖过来的音）。
@@ -1111,7 +1291,7 @@ def _sounding(bars, meter, b):
     names = {p["name"] for (p, *_r) in bars.get(b, [])}
     if b > 1:
         prev = meter[b - 1]
-        for (p, st, du, *_r) in bars.get(b - 1, []):
+        for p, st, du, *_r in bars.get(b - 1, []):
             if st + du > prev.grid:
                 names.add(p["name"])
     return names
@@ -1145,13 +1325,13 @@ def roll(spec, bars, parts, meter):
                 # 先画从前一小节越过来的那段（起音不在这一小节）
                 if b > 1:
                     prev = meter[b - 1]
-                    for (p, st, du, _pitches, _vel) in bars.get(b - 1, []):
+                    for p, st, du, _pitches, _vel in bars.get(b - 1, []):
                         if p is not part or st + du <= prev.grid:
                             continue
                         over = (st + du - prev.grid) * prev.step_ticks // meter[b].step_ticks
                         for k in range(min(grid, over)):
                             line[k] = "|"
-                for (p, st, du, _pitches, _vel) in bars.get(b, []):
+                for p, st, du, _pitches, _vel in bars.get(b, []):
                     if p is not part:
                         continue
                     for k in range(st, min(grid, st + du)):
@@ -1219,8 +1399,10 @@ def presence(spec, bars, parts, meter):
     for b in range(1, len(spec["harmony"]) + 1):
         bar = meter[b]
         names = sorted(_sounding(bars, meter, b))
-        print(f"  {b:>3}  {bar.beats}/{bar.unit}  {chord_at(spec['harmony'], b)['name']:<12} "
-              f"{len(names)}  {', '.join(names)}")
+        print(
+            f"  {b:>3}  {bar.beats}/{bar.unit}  {chord_at(spec['harmony'], b)['name']:<12} "
+            f"{len(names)}  {', '.join(names)}"
+        )
 
 
 def main():
@@ -1245,16 +1427,18 @@ def main():
             raise SystemExit(f"写不出 {name}\n{e}") from e
         print(f"wrote {name}  ({len(m)} bytes)")
 
-    print(f"\n  编制: {ens.get('name','')}  座位 {len(parts)}")
+    print(f"\n  编制: {ens.get('name', '')}  座位 {len(parts)}")
     for p in parts:
         flag = "  ← 待确认" if p["seat"].get("confirm") else ""
         sh = f"  自动择位 {p['_shift']:+d}" if p.get("_shift") else ""
-        print(f"    ch{(p['channel'] if p['channel'] < 9 else p['channel']+1):>2} "
-              f"#{p['gm_program']:<3} {p['name']:<16} "
-              f"音域 {note_name(p['range'][0]) if p.get('range') else '—'}"
-              f"–{note_name(p['range'][1]) if p.get('range') else '—'}  "
-              f"舒适 {note_name(p['comfort'][0]) if p.get('comfort') else '—'}"
-              f"–{note_name(p['comfort'][1]) if p.get('comfort') else '—'}{sh}{flag}")
+        print(
+            f"    ch{(p['channel'] if p['channel'] < 9 else p['channel'] + 1):>2} "
+            f"#{p['gm_program']:<3} {p['name']:<16} "
+            f"音域 {note_name(p['range'][0]) if p.get('range') else '—'}"
+            f"–{note_name(p['range'][1]) if p.get('range') else '—'}  "
+            f"舒适 {note_name(p['comfort'][0]) if p.get('comfort') else '—'}"
+            f"–{note_name(p['comfort'][1]) if p.get('comfort') else '—'}{sh}{flag}"
+        )
 
     if pis:
         print("\n  在场路径检查:")

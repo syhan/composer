@@ -20,6 +20,7 @@ C19：视图只显示谱面之外的假设。MuseScore 能显示的最多作坐�
     follow.py spec.yaml --draw                      打一帧就退
     follow.py spec.yaml --keys "fast-right,fast-right,s,draw"
 """
+
 import bisect
 import contextlib
 import os
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import wave
 
 import numpy as np
@@ -36,12 +38,13 @@ import numpy as np
 import audio as audio_mod
 import render
 
-LIGHT = "█"          # 这一小节这个声部有音
-DARK = "░"           # 没有
-LABEL = 11           # 行首宽度：1 个标记 + 9 个名字 + 1 个空格
+LIGHT = "█"  # 这一小节这个声部有音
+DARK = "░"  # 没有
+LABEL = 11  # 行首宽度：1 个标记 + 9 个名字 + 1 个空格
 
 
 # ---------- 读谱 ----------
+
 
 def load(path):
     spec = render.load_yaml(path, "spec")
@@ -50,18 +53,19 @@ def load(path):
     bars, parts, _tracks, _warns = render.expand(spec, insts, meter)
     bars = render.autoplace(bars, parts)
     bars, _issues = render.apply_presence(spec, bars)
-    return {"path": path, "spec": spec, "meter": meter,
-            "bars": bars, "parts": parts}
+    return {"path": path, "spec": spec, "meter": meter, "bars": bars, "parts": parts}
 
 
 def focus(bars, solo, mute):
     """solo/mute 切**乐谱**（音频没法反混音）。和 audition.py 一致。"""
-    return {b: [(p, *r) for (p, *r) in evs
-                if (not solo or p["name"] in solo) and p["name"] not in mute]
-            for b, evs in bars.items()}
+    return {
+        b: [(p, *r) for (p, *r) in evs if (not solo or p["name"] in solo) and p["name"] not in mute]
+        for b, evs in bars.items()
+    }
 
 
 # ---------- 布局：宽度 ∝ 时长 ----------
+
 
 def layout(meter, n, cols):
     """每小节占多少列。
@@ -70,14 +74,14 @@ def layout(meter, n, cols):
     勉强成立；一旦有 7/8，"一格 = 一小节"就把短小节拉长了——图和声音对不上，
     而且不报错。所以先给每小节 1 列保底，剩下的按 tick 数用最大余数法分。
     """
-    cols = max(cols, n)                       # 每小节至少一格，否则会静默丢小节
+    cols = max(cols, n)  # 每小节至少一格，否则会静默丢小节
     ticks = [meter[b].ticks for b in range(1, n + 1)]
     total = sum(ticks)
     extra = cols - n
     raw = [extra * t / total for t in ticks]
     add = [int(r) for r in raw]
-    order = sorted(range(n), key=lambda i: add[i] - raw[i])   # 余数大的先补
-    for i in order[:extra - sum(add)]:
+    order = sorted(range(n), key=lambda i: add[i] - raw[i])  # 余数大的先补
+    for i in order[: extra - sum(add)]:
         add[i] += 1
     pos, c = {}, 0
     for i in range(n):
@@ -87,6 +91,7 @@ def layout(meter, n, cols):
 
 
 # ---------- 一帧 ----------
+
 
 def frame(v, st, cols):
     meter, n = v["meter"], len(v["spec"]["harmony"])
@@ -115,7 +120,7 @@ def frame(v, st, cols):
         t = str(b)
         if s <= last_end or s + len(t) >= total:
             continue
-        ruler[s:s + len(t)] = list(t)
+        ruler[s : s + len(t)] = list(t)
         last_end = s + len(t)
     out.append(" " * LABEL + "".join(ruler))
 
@@ -163,27 +168,43 @@ def frame(v, st, cols):
     tot = meter.total_secs()
     mark = "▶" if st["playing"] else "‖"
     ab_txt = f"A {st['a'] or '-'}  B {st['b'] or '-'}  loop {'on' if st['loop'] else 'off'}"
-    out.append(f"  {mark} bar {bar}/{n}   {int(t // 60)}:{int(t % 60):02d}"
-               f" / {int(tot // 60)}:{int(tot % 60):02d}   {ab_txt}")
-    out.append("  [space] 停/续  [←→] 小节  [fast] 四小节  [,/.] 一拍  "
-               "[ ][ ] A/B  [l] 循环  [↑↓] 选座位  [s] solo  [m] mute  [g] 清  [q] 退出")
+    out.append(
+        f"  {mark} bar {bar}/{n}   {int(t // 60)}:{int(t % 60):02d}"
+        f" / {int(tot // 60)}:{int(tot % 60):02d}   {ab_txt}"
+    )
+    out.append(
+        "  [space] 停/续  [←→] 小节  [fast] 四小节  [,/.] 一拍  "
+        "[ ][ ] A/B  [l] 循环  [↑↓] 选座位  [s] solo  [m] mute  [g] 清  [q] 退出"
+    )
+    if st.get("note"):
+        out.append(f"  \x1b[31m{st['note']}\x1b[0m")
     return out, secs
 
 
 # ---------- 播放：整曲一次渲成数组，走带 = 下标 ----------
 
 PLAYERS = (
-    (["pw-play", "--format=s16le"], ["--channels={ch}", "--rate={sr}", "-"]),
-    (["paplay", "--format=s16le"], ["--channels={ch}", "--rate={sr}", "--raw"]),
-    (["aplay", "-q"], ["-f", "S16_LE", "-c", "{ch}", "-r", "{sr}", "-"]),
+    # 每个播放器的"原始 PCM"开关和格式名都不一样，别想着统一：
+    #   pw-play 默认把参数当**文件**交给 libsndfile，喂 stdin 必须加 --raw，
+    #           否则它在 open 上就失败；而格式名是 s16 不是 s16le。
+    #   paplay 的格式名才是 s16le。
+    # 写错一个字节的表现是"按空格没声音"——静默、不报错。
+    #
+    # 不列 aplay：它在 PipeWire 的 ALSA 插件下会**无限阻塞**（`-` 读 stdin 读到 EOF
+    # 也不退），而阻塞和正在播放从外面看不出区别。宁可少一个备选，不要一个会挂住的备选。
+    (["pw-play", "--raw"], ["--format=s16", "--channels={ch}", "--rate={sr}", "-"]),
+    (["paplay", "--raw"], ["--format=s16le", "--channels={ch}", "--rate={sr}"]),
 )
 
 # 方向键和 shift+方向键。终端送的是多字节转义序列，所以得先攒齐再查表。
 KEYMAP = {
     " ": "space",
-    "\x1b[A": "up", "\x1b[B": "down",
-    "\x1b[C": "right", "\x1b[D": "left",
-    "\x1b[1;2C": "fast-right", "\x1b[1;2D": "fast-left",
+    "\x1b[A": "up",
+    "\x1b[B": "down",
+    "\x1b[C": "right",
+    "\x1b[D": "left",
+    "\x1b[1;2C": "fast-right",
+    "\x1b[1;2D": "fast-left",
 }
 KEY_SEQS = frozenset(KEYMAP)
 
@@ -198,35 +219,55 @@ class Player:
         self.x, self.sr = x, sr
         self.proc = None
         self.thread = None
-        self.t = 0.0
+        self.fed = 0.0
+        self.started = 0.0
+        self.t0 = 0.0
         self.lock = threading.Lock()
 
     def _spawn(self):
         ch = self.x.shape[1]
+        tried = []
         for cmd, tail in PLAYERS:
             exe = shutil.which(cmd[0])
             if not exe:
+                tried.append(f"{cmd[0]}: 没装")
                 continue
-            args = [exe] + cmd[1:] + [a.format(ch=ch, sr=self.sr) for a in tail]
-            try:
-                return subprocess.Popen(args, stdin=subprocess.PIPE,
-                                        stdout=subprocess.DEVNULL,
-                                        stderr=subprocess.DEVNULL)
-            except OSError:
+            args = [exe, *cmd[1:], *(a.format(ch=ch, sr=self.sr) for a in tail)]
+            proc = subprocess.Popen(
+                args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            # 起不来的播放器（参数写错、音频服务不健康）会**立刻**退出。
+            # 不查的话，它安静地死掉，人只看到"按了没反应"——这正是刚才那次。
+            # 进程已退出时 stderr 已到 EOF，read 不会阻塞。
+            time.sleep(0.12)
+            if proc.poll() is not None:
+                msg = ""
+                if proc.stderr is not None:
+                    msg = proc.stderr.read().decode("utf-8", "replace").strip()
+                first = msg.splitlines()[0] if msg else f"退出码 {proc.returncode}"
+                tried.append(f"{cmd[0]}: {first}")
                 continue
-        raise RuntimeError("没找到能喂 stdin 的播放器（pw-play / paplay / aplay）")
+            return proc
+        raise RuntimeError("没有能用的播放器：\n  " + "\n  ".join(tried))
 
     def start(self, t):
         self.stop()
-        self.t = t
+        self.fed = t
+        self.started = t
         self.proc = self._spawn()
+        # t0 要在 spawn 之后才取：_spawn 里有 120ms 的“看它死没死”的等待，
+        # 算进去的话进度条一开始就比声音快 0.12 秒。
+        self.t0 = time.monotonic()
         self.thread = threading.Thread(target=self._feed, args=(t,), daemon=True)
         self.thread.start()
 
     def _feed(self, t):
         i = max(0, int(t * self.sr))
         buf = self.x[i:]
-        step = max(1, self.sr // 20)            # 50ms 一块：够细，又不至于忙等
+        step = max(1, self.sr // 20)  # 50ms 一块：够细，又不至于忙等
         proc = self.proc
         stdin = proc.stdin if proc is not None else None
         if stdin is None:
@@ -235,11 +276,11 @@ class Player:
             for k in range(0, len(buf), step):
                 if proc is None or proc.poll() is not None:
                     return
-                stdin.write(buf[k:k + step].astype("<i2").tobytes())
+                stdin.write(buf[k : k + step].astype("<i2").tobytes())
                 with self.lock:
-                    self.t = (i + k) / self.sr
+                    self.fed = (i + k) / self.sr
         except (BrokenPipeError, ValueError, OSError):
-            return                              # 播放器被关掉是正常操作
+            return  # 播放器被关掉是正常操作
         finally:
             with contextlib.suppress(OSError):
                 stdin.close()
@@ -252,15 +293,35 @@ class Player:
                 p.kill()
 
     def pos(self):
+        """播放位置：墙钟和“已经喂进去多少”取小的那个。
+
+        只看喂进去多少会**跑在前面**：pw-play 一上来就把管道抽干（它自己还有
+        100ms 的缓冲），2 秒的音频 0.4 秒就喂完了，于是进度条冲到终点而声音还在放。
+        只看墙钟又会撒谎：管道堵住、播放器卡死时时间照走。
+        取 min 两个毛病都没有：平时跟墙钟，卡住时停在已喂到的位置。
+        """
         with self.lock:
-            return self.t
+            if self.proc is None:
+                return self.fed
+            clock = self.started + (time.monotonic() - self.t0)
+            return min(clock, self.fed)
 
 
 # ---------- 状态机 ----------
 
+
 def make_state(v):
-    return {"t": 0.0, "bar": 1, "playing": False, "a": None, "b": None,
-            "loop": False, "sel": 0, "solo": set(), "mute": set()}
+    return {
+        "t": 0.0,
+        "bar": 1,
+        "playing": False,
+        "a": None,
+        "b": None,
+        "loop": False,
+        "sel": 0,
+        "solo": set(),
+        "mute": set(),
+    }
 
 
 def bar_at(secs, t):
@@ -310,10 +371,17 @@ def step(v, st, key, secs, player, engine):
         st["playing"] = not st["playing"]
     elif key == "q":
         return True
+    st["note"] = ""
     if player is not None:
-        if st["playing"]:
-            player.start(st["t"])
-        else:
+        try:
+            if st["playing"]:
+                player.start(st["t"])
+            else:
+                player.stop()
+        except RuntimeError as e:
+            # 声音出不来就当场说出来，不要留在“按了没反应”的状态里。
+            st["playing"] = False
+            st["note"] = str(e).replace("\n", "\n  ")
             player.stop()
     st["bar"] = bar_at(secs, st["t"])
     return False
@@ -358,9 +426,16 @@ def read_wav(path):
 
 # ---------- 主 ----------
 
+
 def parse_args(argv):
-    o = {"spec": "farewell-v3.yaml", "cols": 0, "engine": "gm",
-         "keys": "", "draw": False, "loop": 1}
+    o = {
+        "spec": "farewell-v3.yaml",
+        "cols": 0,
+        "engine": "gm",
+        "keys": "",
+        "draw": False,
+        "loop": 1,
+    }
     i = 0
     while i < len(argv):
         a = argv[i]

@@ -4,6 +4,7 @@
 存在的意义不是音色，而是**证明内环可以没有 MuseScore**：
 spec -> 可听，全在一个 <2 秒的命令里。音色很糙，判结构够用。
 """
+
 import sys
 import wave
 
@@ -14,8 +15,13 @@ from render import apply_presence, expand, load_ensemble, load_yaml, meter_of
 
 SR = 44100
 KIND = {
-    "percussion": "drums", "bass": "bass", "brass": "brass", "strings": "strings",
-    "plucked": "pluck", "wind-synth": "reed", "keyboard": "pluck",
+    "percussion": "drums",
+    "bass": "bass",
+    "brass": "brass",
+    "strings": "strings",
+    "plucked": "pluck",
+    "wind-synth": "reed",
+    "keyboard": "pluck",
 }
 KIND_BY_ID = {"rhythm-guitar": "dist", "lead-guitar": "dist"}
 
@@ -27,8 +33,8 @@ def env_adsr(n, a=0.01, d=0.05, s=0.75, r=0.08):
     if ai:
         e[:ai] = np.linspace(0, 1, ai)
     if di:
-        e[ai:ai + di] = np.linspace(1, s, di)
-    e[ai + di:] = s
+        e[ai : ai + di] = np.linspace(1, s, di)
+    e[ai + di :] = s
     if ri:
         e[-ri:] *= np.linspace(1, 0, ri)
     return e
@@ -42,18 +48,19 @@ def voice(kind, f, dur, vel):
         e = env_adsr(n, 0.005, 0.12, 0.55, 0.06)
     elif kind == "brass":
         w = sum(np.sin(2 * np.pi * f * h * t) / h for h in range(1, 7))
-        w *= 1 + 0.15 * np.sin(2 * np.pi * 5 * t)          # 一点点颤音
+        w *= 1 + 0.15 * np.sin(2 * np.pi * 5 * t)  # 一点点颤音
         e = env_adsr(n, 0.06, 0.1, 0.8, 0.12)
     elif kind == "strings":
-        w = sum(np.sin(2 * np.pi * f * h * (1 + 0.0015 * k) * t) / h
-                for k, h in enumerate(range(1, 8)))
+        w = sum(
+            np.sin(2 * np.pi * f * h * (1 + 0.0015 * k) * t) / h for k, h in enumerate(range(1, 8))
+        )
         w *= 1 + 0.2 * np.sin(2 * np.pi * 5.5 * t)
         e = env_adsr(n, 0.05, 0.15, 0.85, 0.1)
     elif kind == "reed":
-        w = sum(np.sin(2 * np.pi * f * h * t) / (h ** 1.4) for h in range(1, 9))
+        w = sum(np.sin(2 * np.pi * f * h * t) / (h**1.4) for h in range(1, 9))
         e = env_adsr(n, 0.04, 0.08, 0.8, 0.08)
     elif kind == "pluck":
-        w = sum(np.sin(2 * np.pi * f * h * t) / (h ** 1.7) for h in range(1, 6))
+        w = sum(np.sin(2 * np.pi * f * h * t) / (h**1.7) for h in range(1, 6))
         e = np.exp(-t * 6.0)
     else:  # dist
         w = np.tanh(3.0 * sum(np.sin(2 * np.pi * f * h * t) / h for h in (1, 2, 3, 4, 5)))
@@ -63,19 +70,19 @@ def voice(kind, f, dur, vel):
 
 def drum(kind_pitch, vel):
     n1 = int(0.18 * SR)
-    if kind_pitch == 36:                                   # kick
+    if kind_pitch == 36:  # kick
         t = np.arange(int(0.22 * SR)) / SR
         f = np.linspace(130, 48, len(t))
         return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 16) * vel / 127
-    if kind_pitch == 38:                                   # snare
+    if kind_pitch == 38:  # snare
         t = np.arange(n1) / SR
         nz = np.random.randn(len(t)) * np.exp(-t * 32)
         return (0.8 * nz + 0.3 * np.sin(2 * np.pi * 190 * t) * np.exp(-t * 26)) * vel / 127
-    if kind_pitch == 42:                                   # closed hat
+    if kind_pitch == 42:  # closed hat
         t = np.arange(int(0.05 * SR)) / SR
         nz = np.diff(np.random.randn(len(t) + 1)) * np.exp(-t * 90)
         return nz * 0.35 * vel / 127
-    t = np.arange(int(1.4 * SR)) / SR                      # crash
+    t = np.arange(int(1.4 * SR)) / SR  # crash
     return np.random.randn(len(t)) * np.exp(-t * 3.2) * 0.45 * vel / 127
 
 
@@ -85,8 +92,7 @@ def render(path, out=None):
     meter = meter_of(spec)
     bars, parts, _tracks, _warns = expand(spec, insts, meter)
     bars, _ = apply_presence(spec, bars)
-    kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck"))
-               for p in parts}
+    kind_of = {p["id"]: KIND_BY_ID.get(p["id"], KIND.get(p.get("family"), "pluck")) for p in parts}
     # 一个 tick 几秒：全曲常数。但“一格”多长、“一小节”多长都不是，只能逐小节查。
     sec = 60.0 / (spec["meta"]["tempo"] * spec["meta"]["division"])
 
@@ -95,19 +101,19 @@ def render(path, out=None):
 
     for b in sorted(bars):
         bar = meter[b]
-        for (part, st, du, pitches, vel) in bars[b]:
+        for part, st, du, pitches, vel in bars[b]:
             t0 = int((bar.start_tick + st * bar.step_ticks) * sec * SR)
             kind = kind_of.get(part["id"], "pluck")
             if part.get("drum"):
                 for p in pitches:
                     seg = drum(p, vel)
-                    buf[t0:t0 + len(seg)] += seg[:max(0, total - t0)]
+                    buf[t0 : t0 + len(seg)] += seg[: max(0, total - t0)]
             else:
                 dur = du * bar.step_ticks * sec
                 for p in pitches:
                     f = 440.0 * 2 ** ((p - 69) / 12)
                     seg = voice(kind, f, dur * 1.02, vel)
-                    buf[t0:t0 + len(seg)] += seg[:max(0, total - t0)] * 0.22
+                    buf[t0 : t0 + len(seg)] += seg[: max(0, total - t0)] * 0.22
 
     peak = np.max(np.abs(buf)) or 1.0
     buf = buf / peak * 0.92

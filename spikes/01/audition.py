@@ -23,6 +23,7 @@ C10 的全部内容：让"听到 → 判断 → 改一点 → 再听"变便宜�
 3. **diff 只描述，不判断。** 说"钢琴的中位音程从 7 变成 14"，不说"这样更好"。
    分类按 C18：这里输出的全部是第三类（描述性测量），永远不会变成 lint。
 """
+
 import os
 import shutil
 import subprocess
@@ -35,10 +36,11 @@ import numpy as np
 import audio as audio_mod
 import render
 
-GAP = 0.35          # 两版之间的静默，够耳朵切换，又不会让人忘记上一版
+GAP = 0.35  # 两版之间的静默，够耳朵切换，又不会让人忘记上一版
 
 
 # ---------- 载入 ----------
+
 
 def load(path):
     spec = render.load_yaml(path, "spec")
@@ -47,8 +49,16 @@ def load(path):
     bars, parts, tracks, warns = render.expand(spec, insts, meter)
     bars = render.autoplace(bars, parts)
     bars, issues = render.apply_presence(spec, bars)
-    return {"path": path, "spec": spec, "meter": meter, "bars": bars, "parts": parts,
-            "tracks": tracks, "issues": issues, "warns": warns}
+    return {
+        "path": path,
+        "spec": spec,
+        "meter": meter,
+        "bars": bars,
+        "parts": parts,
+        "tracks": tracks,
+        "issues": issues,
+        "warns": warns,
+    }
 
 
 def focus(bars, solo, mute):
@@ -61,6 +71,7 @@ def focus(bars, solo, mute):
 
 
 # ---------- WAV ----------
+
 
 def read_wav(path):
     with wave.open(path) as w:
@@ -80,6 +91,7 @@ def write_wav(path, x, sr):
 
 
 # ---------- 渲染 ----------
+
 
 def render_version(v, bars, lo, hi, engine, tmpdir, tag):
     """渲染 [lo, hi] 这几小节，返回整段 WAV 的路径（时间轴从 lo 开始）。"""
@@ -114,6 +126,7 @@ def take(x, sr, t0, t1):
 
 # ---------- 差异（只描述）----------
 
+
 def flatten(d, prefix=""):
     out = {}
     if isinstance(d, dict):
@@ -138,10 +151,11 @@ def spec_diff(a, b, limit=12):
 
 def event_diff(ba, bb):
     """按 (声部, 小节) 对比音符，合并成 (声部, 小节区间) 的 +/- 计数。"""
+
     def sig(bars):
         s = {}
         for bar, evs in bars.items():
-            for (part, st, du, ps, vel) in evs:
+            for part, st, du, ps, vel in evs:
                 s.setdefault((part["id"], bar), []).append((st, du, tuple(ps), vel))
         return {k: sorted(v) for k, v in s.items()}
 
@@ -211,31 +225,44 @@ def rms_curve(x, sr, bar_secs):
     """逐小节 RMS。传的是一串小节时长——拍号变了它不是常数。"""
     out, t = [], 0.0
     for sec in bar_secs:
-        seg = x[int(t * sr):int((t + sec) * sr)].astype(float) / 32768.0
+        seg = x[int(t * sr) : int((t + sec) * sr)].astype(float) / 32768.0
         if not len(seg):
             break
-        out.append(20 * np.log10(max(1e-9, float(np.sqrt((seg ** 2).mean())))))
+        out.append(20 * np.log10(max(1e-9, float(np.sqrt((seg**2).mean())))))
         t += sec
     return out
 
 
 # ---------- 播放 ----------
 
+
 def play(path, seconds, timeout=30):
     """播一遍。注意：PipeWire 卡住时播放器会无限等，所以必须有超时。"""
-    for cmd in (["pw-play"], ["paplay"], ["aplay", "-q"],
-                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"]):
+    for cmd in (
+        ["pw-play"],
+        ["paplay"],
+        ["aplay", "-q"],
+        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet"],
+    ):
         exe = shutil.which(cmd[0])
         if not exe:
             continue
         try:
-            subprocess.run([exe] + cmd[1:] + [path], stdin=subprocess.DEVNULL,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                           timeout=timeout, check=False)
+            subprocess.run(
+                [exe] + cmd[1:] + [path],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout,
+                check=False,
+            )
             return cmd[0]
         except subprocess.TimeoutExpired:
-            print(f"  ! {cmd[0]} 没有响应（音频服务可能卡住了）。"
-                  f"音频已经写好了，直接在桌面播这个文件。", file=sys.stderr)
+            print(
+                f"  ! {cmd[0]} 没有响应（音频服务可能卡住了）。"
+                f"音频已经写好了，直接在桌面播这个文件。",
+                file=sys.stderr,
+            )
             return None
     print("  ! 没找到播放器（pw-play / paplay / aplay / ffplay）", file=sys.stderr)
     return None
@@ -243,14 +270,34 @@ def play(path, seconds, timeout=30):
 
 # ---------- 主 ----------
 
+
 def parse_args(argv):
-    o = {"specs": [], "bars": None, "loop": 1, "solo": set(), "mute": set(),
-         "engine": "gm", "out": None, "play": False, "order": "ab",
-         "blind": False, "diff": False}
+    o = {
+        "specs": [],
+        "bars": None,
+        "loop": 1,
+        "solo": set(),
+        "mute": set(),
+        "engine": "gm",
+        "out": None,
+        "play": False,
+        "order": "ab",
+        "blind": False,
+        "diff": False,
+    }
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--bars", "--loop", "--solo", "--mute", "--engine", "--out", "-o", "--order") and i + 1 < len(argv):
+        if a in (
+            "--bars",
+            "--loop",
+            "--solo",
+            "--mute",
+            "--engine",
+            "--out",
+            "-o",
+            "--order",
+        ) and i + 1 < len(argv):
             v = argv[i + 1]
             i += 2
             if a == "--bars":
@@ -291,33 +338,33 @@ def main():
     total = len(spec0["harmony"])
     start, end = o["bars"] or (1, total)
     start, end = max(1, start), min(total, end)
-    lo = max(1, start - 1)                  # preroll：保住从前一小节拖过来的音
+    lo = max(1, start - 1)  # preroll：保住从前一小节拖过来的音
     if o["engine"] == "synth":
-        lo = 1                              # synth 只能整曲渲
+        lo = 1  # synth 只能整曲渲
 
-    order = list(range(len(versions)))          # 播放顺序，元素是 versions 的下标
+    order = list(range(len(versions)))  # 播放顺序，元素是 versions 的下标
     if o["blind"]:
         np.random.default_rng().shuffle(order)
     seq = [versions[i] for i in order]
-    labels = [chr(ord("A") + k) for k in range(len(seq))]   # 标签跟着**播放顺序**走
+    labels = [chr(ord("A") + k) for k in range(len(seq))]  # 标签跟着**播放顺序**走
 
     tmpdir = tempfile.mkdtemp(prefix="audition-")
     try:
         chunks, curves, used_engine = [], [], o["engine"]
-        sr = 0                                  # 由第一版渲染决定；后面必须一致
+        sr = 0  # 由第一版渲染决定；后面必须一致
         for k, v in enumerate(seq):
             bars = focus(v["bars"], o["solo"], o["mute"])
-            wav = render_version(v, bars, lo, hi=end, engine=o["engine"],
-                                 tmpdir=tmpdir, tag=f"v{k}")
+            wav = render_version(
+                v, bars, lo, hi=end, engine=o["engine"], tmpdir=tmpdir, tag=f"v{k}"
+            )
             x, sr_k = read_wav(wav)
-            if sr and sr_k != sr:               # 采样率不一致就没法拼成一条时间轴
+            if sr and sr_k != sr:  # 采样率不一致就没法拼成一条时间轴
                 raise SystemExit(f"采样率不一致：{sr} vs {sr_k}（{v['path']}）")
             sr = sr_k
             # 小节的秒数不是常数（7/8 比 4/4 短），所以只能按 tick 累加算秒。
             m = v["meter"]
             t_lo = m.secs(lo)
-            seg = take(x, sr, m.secs(start) - t_lo,
-                       m.secs(end) + m.bar_secs(end) - t_lo)
+            seg = take(x, sr, m.secs(start) - t_lo, m.secs(end) + m.bar_secs(end) - t_lo)
             curves.append(rms_curve(seg, sr, [m.bar_secs(b) for b in range(start, end + 1)]))
             if o["loop"] > 1:
                 seg = np.tile(seg, (o["loop"], 1))
@@ -329,8 +376,7 @@ def main():
         if len(chunks) == 1:
             out = chunks[0]
         elif o["order"] == "abab":
-            out = np.concatenate([chunks[0], gap, chunks[1], gap,
-                                  chunks[0], gap, chunks[1]])
+            out = np.concatenate([chunks[0], gap, chunks[1], gap, chunks[0], gap, chunks[1]])
         else:
             pieces = []
             for i, c in enumerate(chunks):
@@ -349,8 +395,10 @@ def main():
             extra.append("solo " + ",".join(sorted(o["solo"])))
         if o["mute"]:
             extra.append("mute " + ",".join(sorted(o["mute"])))
-        print(f"\n  {scope}   {len(out)/sr:.1f}s   engine={used_engine}"
-              + (("   " + "  ".join(extra)) if extra else ""))
+        print(
+            f"\n  {scope}   {len(out) / sr:.1f}s   engine={used_engine}"
+            + (("   " + "  ".join(extra)) if extra else "")
+        )
 
         # 先给纲要，再听。这就是“制造预期”：知道该听什么，才听得出来。
         # 盲测时也打——它说的是这首曲子，不是这一版改了什么。
@@ -366,9 +414,13 @@ def main():
             if o["blind"]:
                 key = os.path.abspath("audition-key.txt")
                 with open(key, "w", encoding="utf-8") as f:
-                    f.write("\n".join(
-                        f"{lab}  {os.path.basename(v['path'])}"
-                        for lab, v in zip(labels, seq, strict=True)) + "\n")
+                    f.write(
+                        "\n".join(
+                            f"{lab}  {os.path.basename(v['path'])}"
+                            for lab, v in zip(labels, seq, strict=True)
+                        )
+                        + "\n"
+                    )
                 print(f"    盲测：{len(seq)} 个候选按 {'→'.join(labels)} 播放")
                 print(f"    先听，再打开 {key}")
                 print("    （盲测时不打印 diff 与测量，否则等于提前告诉你答案）")
@@ -376,16 +428,19 @@ def main():
                 for lab, v in zip(labels, seq, strict=True):
                     print(f"    {lab}  {os.path.basename(v['path'])}")
                 if o["diff"]:
-                    print_diff(seq[0], seq[1],
-                               focus(seq[0]["bars"], o["solo"], o["mute"]),
-                               focus(seq[1]["bars"], o["solo"], o["mute"]),
-                               end - start + 1)
+                    print_diff(
+                        seq[0],
+                        seq[1],
+                        focus(seq[0]["bars"], o["solo"], o["mute"]),
+                        focus(seq[1]["bars"], o["solo"], o["mute"]),
+                        end - start + 1,
+                    )
                 # 描述性对比：每小节 RMS，不是判断
                 print("\n  量出来（描述，不是判断）")
-                head = "".join(f"{start+i:>7}" for i in range(len(curves[0])))
+                head = "".join(f"{start + i:>7}" for i in range(len(curves[0])))
                 print(f"    {'bar':<8}{head}")
                 for lab, cv in zip(labels, curves, strict=True):
-                    print(f"    {lab+' dB':<8}" + "".join(f"{v:>7.1f}" for v in cv))
+                    print(f"    {lab + ' dB':<8}" + "".join(f"{v:>7.1f}" for v in cv))
 
         print(f"\n  {out_path}")
         if o["play"]:

@@ -7,6 +7,7 @@
 
 同一组数字，可能是"齐奏"也可能是"糊"——只有耳朵能分开。所以这里只描述。
 """
+
 import sys
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
@@ -27,9 +28,10 @@ def per_bar(bars):
     out = {}
     for b, evs in bars.items():
         d = {}
-        for (p, st, du, ps, v) in evs:
-            e = d.setdefault(p["id"], {"name": p["name"], "steps": set(), "pitches": [],
-                                       "at": {}, "notes": 0})
+        for p, st, du, ps, v in evs:
+            e = d.setdefault(
+                p["id"], {"name": p["name"], "steps": set(), "pitches": [], "at": {}, "notes": 0}
+            )
             e["steps"].add(st)
             e["at"].setdefault(st, []).extend(ps)
             e["pitches"].extend(ps)
@@ -56,8 +58,9 @@ def salience(pb):
                 reg = 1 - inter / max(1, min(own_hi - own_lo, ohi - olo))
             else:
                 reg = 1.0
-            excl = sum(1 for s in e["steps"]
-                       if not any(s in f["steps"] for q, f in d.items() if q != pid)) / max(1, len(e["steps"]))
+            excl = sum(
+                1 for s in e["steps"] if not any(s in f["steps"] for q, f in d.items() if q != pid)
+            ) / max(1, len(e["steps"]))
             dens = e["notes"] / tot
             scores[e["name"]] = 0.4 * excl + 0.3 * dens * min(3, len(d)) / 3 + 0.3 * reg
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:2]
@@ -73,10 +76,11 @@ def pair_metrics(pb, meter):
             for j in range(i + 1, len(ids)):
                 a, c = d[ids[i]], d[ids[j]]
                 k = tuple(sorted((a["name"], c["name"])))
-                m = agg.setdefault(k, {"bars": 0, "co": 0, "on": 0, "uni": 0,
-                                       "iv": [], "dens": [], "grid": 0})
+                m = agg.setdefault(
+                    k, {"bars": 0, "co": 0, "on": 0, "uni": 0, "iv": [], "dens": [], "grid": 0}
+                )
                 m["bars"] += 1
-                m["grid"] += meter[b].grid      # 交错度的分母要按拍号算，不是写死 16
+                m["grid"] += meter[b].grid  # 交错度的分母要按拍号算，不是写死 16
                 co = sum(1 for s in a["steps"] if s in c["steps"])
                 m["on"] += len(a["steps"])
                 m["co"] += co
@@ -104,7 +108,9 @@ def main():
         print(f"    bar {b:>2}  {chord:<7} {s}")
 
     print("\n  关系表（成对指标；按交错度排序）")
-    print(f"    {'一对声部':<38}{'同在':>4}{'节奏重合':>9}{'交错度':>8}{'中位音程':>6}{'同八度':>7}")
+    print(
+        f"    {'一对声部':<38}{'同在':>4}{'节奏重合':>9}{'交错度':>8}{'中位音程':>6}{'同八度':>7}"
+    )
     rows = []
     for (x, y), m in pair_metrics(pb, meter).items():
         if m["bars"] < 2:
@@ -115,19 +121,23 @@ def main():
         ivs = sorted(m["iv"])
         med = ivs[len(ivs) // 2] if ivs else 0
         uni = m["uni"] / max(1, len(m["iv"]))
-        rows.append((interlock, f"{x} × {y}", m["bars"], coin, med, uni, sum(m["dens"]) / len(m["dens"])))
+        rows.append(
+            (interlock, f"{x} × {y}", m["bars"], coin, med, uni, sum(m["dens"]) / len(m["dens"]))
+        )
     for il, name, bars_n, coin, med, uni, dens in sorted(rows, reverse=True):
-        print(f"    {name[:37]:<38}{bars_n:>4}{coin*100:>8.0f}%{il:>8.2f}{med:>7}{uni*100:>7.0f}%  {dens:>4.1f}音/小节")
+        print(
+            f"    {name[:37]:<38}{bars_n:>4}{coin * 100:>8.0f}%{il:>8.2f}{med:>7}{uni * 100:>7.0f}%  {dens:>4.1f}音/小节"
+        )
 
     print("\n  值得看的四类（阈值只是为了让眼睛先看到东西，不是规则）：")
     for il, name, bars_n, coin, med, uni, dens in sorted(rows, reverse=True)[:3]:
-        print(f"    交织  {name}：交错度 {il:.2f}，重合仅 {coin*100:.0f}%，中位音程 {med} 半音")
+        print(f"    交织  {name}：交错度 {il:.2f}，重合仅 {coin * 100:.0f}%，中位音程 {med} 半音")
     for il, name, bars_n, coin, med, uni, dens in sorted(rows, reverse=True):
         if coin > 0.75 and med < 12:
-            print(f"    碰撞  {name}：重合 {coin*100:.0f}% + 中位音程 {med} 半音 → 这一段可能糊")
+            print(f"    碰撞  {name}：重合 {coin * 100:.0f}% + 中位音程 {med} 半音 → 这一段可能糊")
     for il, name, bars_n, coin, med, uni, dens in sorted(rows, reverse=True):
         if uni > 0.8:
-            print(f"    叠置  {name}：同八度/同度 {uni*100:.0f}% → 有意齐奏（还是糊？耳朵定）")
+            print(f"    叠置  {name}：同八度/同度 {uni * 100:.0f}% → 有意齐奏（还是糊？耳朵定）")
 
 
 if __name__ == "__main__":

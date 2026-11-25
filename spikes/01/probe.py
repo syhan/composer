@@ -14,6 +14,7 @@ Python。如果那一步是整条通路里最值钱的，它就不该靠每次�
 ⚠️ 这里输出的全部是 C18 的第三类：描述性测量。
    没有一行是警告，也不会变成 lint。"这段太挤" 不在这里，也不该在这里。
 """
+
 import os
 import shutil
 import sys
@@ -22,8 +23,16 @@ import tempfile
 import numpy as np
 
 NAME = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-BANDS = [(20, 80), (80, 160), (160, 320), (320, 640),
-         (640, 1280), (1280, 2560), (2560, 5120), (5120, 12000)]
+BANDS = [
+    (20, 80),
+    (80, 160),
+    (160, 320),
+    (320, 640),
+    (640, 1280),
+    (1280, 2560),
+    (2560, 5120),
+    (5120, 12000),
+]
 
 
 def nm(p):
@@ -54,7 +63,7 @@ def collect(bars, parts, meter, lo, hi):
         ps, iv, beats, ticks = [], [], 0.0, 0
         for b in range(lo, hi + 1):
             bar = meter[b]
-            for (p, st, du, pitches, v) in bars.get(b, []):
+            for p, st, du, pitches, v in bars.get(b, []):
                 if p is not part:
                     continue
                 t = du * bar.step_ticks
@@ -70,14 +79,27 @@ def collect(bars, parts, meter, lo, hi):
 
 def section_register(rows):
     print("\n  音区塔（按中位排序；发声时长加权）")
-    print("    " + pad("声部", 18) + rpad("最低", 6) + rpad("最高", 6)
-          + rpad("中位", 6) + rpad("发声拍", 8) + rpad("和弦内音程", 12))
+    print(
+        "    "
+        + pad("声部", 18)
+        + rpad("最低", 6)
+        + rpad("最高", 6)
+        + rpad("中位", 6)
+        + rpad("发声拍", 8)
+        + rpad("和弦内音程", 12)
+    )
     for name, d in sorted(rows.items(), key=lambda kv: int(np.median(kv[1]["ps"]))):
         ps = d["ps"]
         med_iv = f"{int(np.median(d['iv']))} 半音" if d["iv"] else "—"
-        print("    " + pad(name[:17], 18) + nm(min(ps)).rjust(6) + nm(max(ps)).rjust(6)
-              + nm(int(np.median(ps))).rjust(6) + f"{d['beats']:.0f}".rjust(8)
-              + med_iv.rjust(12))
+        print(
+            "    "
+            + pad(name[:17], 18)
+            + nm(min(ps)).rjust(6)
+            + nm(max(ps)).rjust(6)
+            + nm(int(np.median(ps))).rjust(6)
+            + f"{d['beats']:.0f}".rjust(8)
+            + med_iv.rjust(12)
+        )
 
 
 def section_octaves(rows):
@@ -100,11 +122,11 @@ def section_spectrum(x, sr):
         return
     X = np.abs(np.fft.rfft(x * np.hanning(len(x))))
     f = np.fft.rfftfreq(len(x), 1 / sr)
-    P, tot = X ** 2, (X ** 2).sum() or 1.0
+    P, tot = X**2, (X**2).sum() or 1.0
     print("\n  频谱分带（渲染后文件里实际有多少能量）")
     for lo, hi in BANDS:
         p = P[(f >= lo) & (f < hi)].sum() / tot
-        print(f"    {lo:>5}-{hi:<5} Hz  {100*p:>5.1f}%  {'#' * int(60 * p)}")
+        print(f"    {lo:>5}-{hi:<5} Hz  {100 * p:>5.1f}%  {'#' * int(60 * p)}")
     low = 100 * P[f < 160].sum() / tot
     mid = 100 * P[(f >= 160) & (f < 1280)].sum() / tot
     high = 100 * P[f >= 1280].sum() / tot
@@ -114,22 +136,34 @@ def section_spectrum(x, sr):
 def section_bars(bars, harmony, meter, lo, hi):
     chord_of = {h["bar"]: h["name"] for h in harmony}
     print("\n  每小节")
-    print("    " + pad("bar", 6) + rpad("拍号", 7) + rpad("音符数", 8)
-          + rpad("在场件数", 10) + rpad("发声拍", 8) + "  和弦")
+    print(
+        "    "
+        + pad("bar", 6)
+        + rpad("拍号", 7)
+        + rpad("音符数", 8)
+        + rpad("在场件数", 10)
+        + rpad("发声拍", 8)
+        + "  和弦"
+    )
     for b in range(lo, hi + 1):
         bar = meter[b]
         evs = bars.get(b, [])
         names = {p["id"] for (p, *_r) in evs}
-        beats = sum(du * bar.step_ticks / (bar.ticks / bar.beats)
-                    for (_p, _st, du, _ps, _v) in evs)
-        print("    " + pad(b, 6) + rpad(f"{bar.beats}/{bar.unit}", 7)
-              + f"{len(evs)}".rjust(8) + f"{len(names)}".rjust(10)
-              + f"{beats:.0f}".rjust(8) + "  " + chord_of.get(b, "—"))
+        beats = sum(du * bar.step_ticks / (bar.ticks / bar.beats) for (_p, _st, du, _ps, _v) in evs)
+        print(
+            "    "
+            + pad(b, 6)
+            + rpad(f"{bar.beats}/{bar.unit}", 7)
+            + f"{len(evs)}".rjust(8)
+            + f"{len(names)}".rjust(10)
+            + f"{beats:.0f}".rjust(8)
+            + "  "
+            + chord_of.get(b, "—")
+        )
 
 
 def parse(argv):
-    o = {"spec": None, "bars": None, "solo": set(), "mute": set(),
-         "engine": "gm", "audio": True}
+    o = {"spec": None, "bars": None, "solo": set(), "mute": set(), "engine": "gm", "audio": True}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -193,8 +227,9 @@ def main():
             w, sr = audition.read_wav(wav)
             # 小节的秒数不是常数（拍号可变），只能按 tick 累加算。
             t0 = meter.secs(pre)
-            seg = audition.take(w, sr, meter.secs(lo) - t0,
-                                meter.secs(hi) + meter.bar_secs(hi) - t0)
+            seg = audition.take(
+                w, sr, meter.secs(lo) - t0, meter.secs(hi) + meter.bar_secs(hi) - t0
+            )
             section_spectrum(seg, sr)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
