@@ -352,6 +352,16 @@ def main():
         print(f"\n  {scope}   {len(out)/sr:.1f}s   engine={used_engine}"
               + (("   " + "  ".join(extra)) if extra else ""))
 
+        # 先给纲要，再听。这就是“制造预期”：知道该听什么，才听得出来。
+        # 盲测时也打——它说的是这首曲子，不是这一版改了什么。
+        # 但两版纲要不同时就不打：那说明它们不是同一首曲子的两种读法，
+        # 拿 A 的纲要去听 B，是给耳朵递假情报。
+        guides = [render.guide_of(v["spec"]) for v in seq]
+        if all(g == guides[0] for g in guides):
+            render.guide(spec0, versions[0]["meter"], start, end)
+        elif any(any(part) for g in guides for part in g):
+            print("    两版的纲要不同，不打印——先听，再分别看各自的 guide")
+
         if len(seq) > 1:
             if o["blind"]:
                 key = os.path.abspath("audition-key.txt")

@@ -870,7 +870,29 @@ def selftest():
             bad += not ok
             print(f"  {'✓' if ok else '✗'} 节奏串{label}（{g} 格）没有拒绝")
 
-    total = len(cases) + 2 + 4 + len(rejects) + 4
+    # guide 只校验结构，不校验内容。结构错了就是错了：锚点越界、不递增、空句子。
+    gspec = {"meta": {"tempo": 92, "division": 480, "meter": [4, 4]},
+             "harmony": [{"name": "C5"}] * 8}
+    grejects = [
+        ("锚点越界", [{"bar": 9, "text": "x"}]),
+        ("不递增", [{"bar": 5, "text": "x"}, {"bar": 5, "text": "y"}]),
+        ("空句子", [{"bar": 3, "text": "   "}]),
+    ]
+    for label, beats in grejects:
+        try:
+            guide_of({**gspec, "guide": {"beats": beats}})
+        except SystemExit:
+            print(f"  ✓ 拒绝：guide {label}")
+        else:
+            bad += 1
+            print(f"  ✗ 没有拒绝：guide {label}")
+    gok = {**gspec, "guide": {"summary": " s ", "intension": [" i "],
+                               "beats": [{"bar": 1, "text": " a "}, {"bar": 5, "text": " b "}]}}
+    ok = guide_of(gok) == ("s", ["i"], [(1, "a"), (5, "b")])
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} guide 正常读取（首尾空白去掉，顺序保留）")
+
+    total = len(cases) + 2 + 4 + len(rejects) + 4 + len(grejects) + 1
     print(f"\n  {total - bad}/{total} 通过")
     raise SystemExit(1 if bad else 0)
 
@@ -1139,6 +1161,59 @@ def roll(spec, bars, parts, meter):
         print()
 
 
+def guide_of(spec):
+    """纲要：一句话的整首说明 + 若干条锚在小节上的旁白。
+
+    这里只校验**结构**（锚点存在、递增、非空），不校验内容。
+    用 NLP 去判断“变空”和 RMS 方向是否一致，是替自己编理解——
+    矩阵是权威，句子是注释（C18 第三类：描述性，永不进 lint）。
+
+    写作规则（可检验）：**一句旁白，只有在能说出“否则你会听成什么”时才值得写。**
+    说不出那个 X 的，要么归到 `summary`，要么删掉（“这里钢琴进来了”不过——矩阵已经说了）。
+
+    `intension` 是内涵级句子：**对两份完全不同的外延都成立**。
+    它们不是摘要，是用来回答“新编曲完全不像旧编曲时，怎么判断它还服务同一个意图”。
+    """
+    total = len(spec["harmony"])
+    g = spec.get("guide") or {}
+    summary = (g.get("summary") or "").strip()
+    intension = [str(x).strip() for x in (g.get("intension") or [])]
+    beats, last = [], 0
+    for item in g.get("beats") or []:
+        if "bar" not in item or "text" not in item:
+            raise SystemExit(f"guide.beats 每一条都要有 bar 和 text: {item!r}")
+        b = int(item["bar"])
+        text = str(item["text"]).strip()
+        if not 1 <= b <= total:
+            raise SystemExit(f"guide 锚在 bar {b}，但全曲只有 {total} 小节")
+        if b <= last:
+            raise SystemExit(f"guide 的小节必须递增：bar {b} 排在 bar {last} 之后")
+        if not text:
+            raise SystemExit(f"guide bar {b} 的 text 是空的")
+        beats.append((b, text))
+        last = b
+    return summary, intension, beats
+
+
+def guide(spec, meter, first=1, last=None):
+    """打印纲要。first/last 给定时只打这一段的旁白（audition 用）。"""
+    summary, intension, beats = guide_of(spec)
+    if not summary and not intension and not beats:
+        return
+    whole = first == 1 and last is None
+    if whole and summary:
+        print(f"\n  纲要  {summary}")
+    for b, text in beats:
+        if last is not None and not first <= b <= last:
+            continue
+        s = meter.secs(b)
+        print(f"    {int(s // 60)}:{int(s % 60):02d}  bar {b:<3} {text}")
+    if whole and intension:
+        print("\n  内涵（对两份不同的编曲都成立，所以它不是编曲细节）:")
+        for x in intension:
+            print(f"    · {x}")
+
+
 def presence(spec, bars, parts, meter):
     print("  bar  meter  chord        n")
     for b in range(1, len(spec["harmony"]) + 1):
@@ -1205,6 +1280,7 @@ def main():
         print(f"    （{len(warns)} 条提示，无错误）")
 
     report(bars, parts, meter)
+    guide(spec, meter)
     roll(spec, bars, parts, meter)
     presence(spec, bars, parts, meter)
 
