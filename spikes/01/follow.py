@@ -40,7 +40,12 @@ import render
 
 LIGHT = "█"  # 这一小节这个声部有音
 DARK = "░"  # 没有
-LABEL = 11  # 行首宽度：1 个标记 + 9 个名字 + 1 个空格
+# 当前正在放的那一小节用另一种字，否则整个图是静止的，光标个箭头看不出"现在谁在响"。
+NOW = "▓"
+NOW_OFF = "▒"
+# 行首宽度：选中标记 1 + solo/mute 标记 1 + 名字 9 + 空格 1 = 12。
+# 之前写成 11，于是小节号、▲、A/B 条整体比格子左偏一列。
+LABEL = 12
 
 
 # ---------- 读谱 ----------
@@ -98,7 +103,10 @@ def frame(v, st, cols):
     pos, total = layout(meter, n, cols)
     seats = [p["name"] for p in v["parts"]]
     on = {b: render._sounding(v["bars"], meter, b) for b in range(1, n + 1)}
-    bar = st["bar"]
+    secs = [meter.secs(b) for b in range(1, n + 1)]
+    # 小节号从 t 现算，不要读 st["bar"]：那个只在按键时更新，
+    # 于是播放时箭头和灯全部冻住，看起来像"没在动"。
+    bar = bar_at(secs, st["t"])
 
     out = []
     title = v["spec"]["meta"].get("title", os.path.basename(v["path"]))
@@ -138,6 +146,8 @@ def frame(v, st, cols):
                 ch = "╌"
             elif st["solo"] and name not in st["solo"]:
                 ch = "·"
+            elif b == bar:
+                ch = NOW if lit else NOW_OFF
             else:
                 ch = LIGHT if lit else DARK
             cells.append(ch * w)
@@ -163,7 +173,6 @@ def frame(v, st, cols):
             bits = [f"+{x}" for x in enter] + [f"-{x}" for x in leave]
             out.append(f"  接下来 bar {bar + 1}:  {' '.join(bits)}")
 
-    secs = [meter.secs(b) for b in range(1, n + 1)]
     t = st["t"]
     tot = meter.total_secs()
     mark = "▶" if st["playing"] else "‖"
@@ -172,10 +181,9 @@ def frame(v, st, cols):
         f"  {mark} bar {bar}/{n}   {int(t // 60)}:{int(t % 60):02d}"
         f" / {int(tot // 60)}:{int(tot % 60):02d}   {ab_txt}"
     )
-    out.append(
-        "  [space] 停/续  [←→] 小节  [fast] 四小节  [,/.] 一拍  "
-        "[ ][ ] A/B  [l] 循环  [↑↓] 选座位  [s] solo  [m] mute  [g] 清  [q] 退出"
-    )
+    # 拆成两行：一行放不下就会折行，折行之后图的高度会变，刷新时会抖。
+    out.append("  [space] 停/续   [←→] 小节   [⇧←→] 四小节   [,/.] 一拍")
+    out.append("  [ ] A/B  [l] 循环  [↑↓] 选座位  [s] solo  [m] mute  [g] 清  [q] 退出")
     if st.get("note"):
         out.append(f"  \x1b[31m{st['note']}\x1b[0m")
     return out, secs
@@ -313,7 +321,6 @@ class Player:
 def make_state(v):
     return {
         "t": 0.0,
-        "bar": 1,
         "playing": False,
         "a": None,
         "b": None,
@@ -383,7 +390,6 @@ def step(v, st, key, secs, player, engine):
             st["playing"] = False
             st["note"] = str(e).replace("\n", "\n  ")
             player.stop()
-    st["bar"] = bar_at(secs, st["t"])
     return False
 
 
@@ -464,8 +470,10 @@ def main():
     v = load(o["spec"])
     v["tmpdir"] = tempfile.mkdtemp(prefix="follow-")
     st = make_state(v)
-    _lines, secs = frame(v, st, o["cols"] or shutil.get_terminal_size((100, 30)).columns - 2)
-    cols = o["cols"] or shutil.get_terminal_size((100, 30)).columns - 2
+    # --cols 是**图本身**的宽度（不含行首的座位名），所以整行宽 = LABEL + cols。
+    # 这里默认减掉 LABEL，不然 80 列的终端上每一行都会折行，图就散了。
+    cols = o["cols"] or max(20, shutil.get_terminal_size((100, 30)).columns - LABEL - 1)
+    _lines, secs = frame(v, st, cols)
 
     player = None
     if o["engine"] != "none":
