@@ -33,7 +33,13 @@ def notes_per_bar(track):
 
 def main():
     spec = render.load_yaml(sys.argv[1] if len(sys.argv) > 1 else "farewell-v3.yaml", "spec")
-    theme = next(t for t in spec["material"] if t.get("theme"))
+    theme = next((t for t in spec["material"] if t.get("theme")), None)
+    if theme is None:
+        # 导入来的谱、或任何没标 theme 的谱：没有"人声那条旋律"，就没有词可对。
+        # 这不是错误，是这份谱没有这一层。
+        print("  这份谱里没有 theme 轨（没有人声旋律），没有歌词可对。")
+        print("  词表目前还是《送别》专用的，换曲子要改 PHRASES。")
+        return 0
     npb = notes_per_bar(theme)
 
     print(f"{'编排/旋律':<10}{'音数':>4}  {'字':<16}{'拖腔':>4}   说明")

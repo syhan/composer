@@ -49,24 +49,32 @@ run "render --selftest" "$PY" render.py --selftest
 # 看起来就像"这些快捷键没什么用"。
 run "follow --selftest" "$PY" follow.py --selftest
 # 导入报告：只读、不写文件。它答的是"这个文件里有什么、哪些会丢"。
-run "importxml --report" "$PY" importxml.py ref-tricky.musicxml
-run "importxml --dump" "$PY" importxml.py ref-tricky.musicxml --dump violin
+run "ingest --report" "$PY" ingest.py ref-tricky.musicxml
+run "ingest --dump" "$PY" ingest.py ref-tricky.musicxml --dump violin
+
+# 导入 -> 生成 spec -> 跑全套入口。写进临时 root，不污染仓库。
+# 这条路径专门覆盖 `notes:`（绝对 tick 的素材），是唯一不走格子的入口。
+imp="$tmp/imp"
+mkdir -p "$imp"
+run "import --as-spec" env INGEST_ROOT="$imp" "$PY" ingest.py \
+    ref-tricky.musicxml --as-spec "$imp/tricky.yaml"
 
 # 每首谱跑一遍全部入口。加了新谱就往这里加一行——
 # 一个入口只被一首谱覆盖过，等于没被覆盖（synth.py 就是这么坏掉的）。
 suite() {
   local spec=$1 rng=$2 solo=$3
-  local t="[$spec]"
+  local lab; lab=$(basename "$spec")
+  local t="[$lab]"
   run "render $t"    "$PY" render.py "$spec"
   run "synth $t"     "$PY" synth.py "$spec"
   run "lyrics $t"    "$PY" lyrics.py "$spec"
   run "relations $t" "$PY" relations.py "$spec"
-  run "audio gm $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-gm.wav" --engine gm
-  run "audio sy $t"  "$PY" audio.py "$spec" -o "$tmp/$spec-sy.wav" --engine synth
-  run "measure $t"   "$PY" measure.py "$tmp/$spec-gm.wav" "$spec"
-  run "audition $t"  "$PY" audition.py "$spec" --bars "$rng" --loop 2 -o "$tmp/$spec-a1.wav"
-  run "solo $t"      "$PY" audition.py "$spec" --bars "$rng" --solo "$solo" -o "$tmp/$spec-a2.wav"
-  run "A/B $t"       "$PY" audition.py "$spec" "$spec" --bars "$rng" --diff -o "$tmp/$spec-a3.wav"
+  run "audio gm $t"  "$PY" audio.py "$spec" -o "$tmp/$lab-gm.wav" --engine gm
+  run "audio sy $t"  "$PY" audio.py "$spec" -o "$tmp/$lab-sy.wav" --engine synth
+  run "measure $t"   "$PY" measure.py "$tmp/$lab-gm.wav" "$spec"
+  run "audition $t"  "$PY" audition.py "$spec" --bars "$rng" --loop 2 -o "$tmp/$lab-a1.wav"
+  run "solo $t"      "$PY" audition.py "$spec" --bars "$rng" --solo "$solo" -o "$tmp/$lab-a2.wav"
+  run "A/B $t"       "$PY" audition.py "$spec" "$spec" --bars "$rng" --diff -o "$tmp/$lab-a3.wav"
   run "probe $t"     "$PY" probe.py "$spec" --bars "$rng"
   run "probe-n $t"   "$PY" probe.py "$spec" --bars "$rng" --no-audio
   run "follow $t"    "$PY" follow.py "$spec" --no-audio --draw
@@ -83,6 +91,12 @@ suite farewell-steampunk.yaml 21-24 theremin
 # 否则"小节边界"这类假设会安静地错下去（measure.py 曾经把 `4 * 60/tempo` 写死——
 # 对 4/4 一直是对的，所以从来没人发现，直到第一首 7/8 出现）。
 suite meter-selftest.yaml   5-8  theremin
+# 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
+suite "$imp/tricky.yaml"    1-2  violin
+# 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
+suite "$imp/tricky.yaml"    1-2  violin
+# 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
+suite "$imp/tricky.yaml"    1-2  violin
 
 # 音频必须真的有声音，而不是一个空壳文件
 if [ -s "$tmp/farewell-v3.yaml-gm.wav" ]; then

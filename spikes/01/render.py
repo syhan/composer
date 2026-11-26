@@ -549,6 +549,43 @@ def build_material(spec, meter):
                         "tonal": semis % 12 != 0,
                     }
                 )
+            elif "notes" in seg:
+                # 绝对 tick，从第 1 小节起算。导入来的东西走这里：
+                # 三连音、跨小节音、不规则的时值，全都不必落在格子上。
+                if target[0] != 1:
+                    raise SystemExit(
+                        f"素材 {tr['id']} {seg['bars']}: notes 的 tick 是从第 1 小节起算的"
+                        f"绝对值，段必须从 bar 1 开始（当前从 bar {target[0]} 开始）"
+                    )
+                seq = []
+                for n in seg["notes"]:
+                    if "tick" not in n or "dur" not in n:
+                        raise SystemExit(
+                            f"素材 {tr['id']}: notes 每一项都要有 tick 和 dur: {n!r}"
+                        )
+                    pit = n.get("pitch")
+                    if pit is None:
+                        raise SystemExit(f"素材 {tr['id']}: notes 每一项都要有 pitch: {n!r}")
+                    ps = [pit] if isinstance(pit, int) else [int(x) for x in pit]
+                    du = int(n["dur"])
+                    if du <= 0:
+                        raise SystemExit(
+                            f"素材 {tr['id']}: bar 1 起 tick {n['tick']} 上时值 {du} 是空的"
+                        )
+                    seq.append((int(n["tick"]), du, ps, int(n.get("velocity", 80))))
+                seq.sort(key=lambda x: x[0])
+                lineage.append(
+                    {
+                        "from": None,
+                        "from_bars": None,
+                        "bars": seg["bars"],
+                        "ops": [],
+                        "semitones": 0,
+                        "pure": False,
+                        "tonal": False,
+                        "origin": seg.get("origin") or "written",
+                    }
+                )
             elif "degrees" in seg:
                 seq, step = [], 0
                 for tok in seg["degrees"].split():

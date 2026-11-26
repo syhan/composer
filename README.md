@@ -794,7 +794,7 @@ meta:
 还没做的：**导出** MusicXML 要写 `<time-modification>`，得从 `dur / step_ticks` 反推是几比几。
 那一步还不存在。导入方向反而更简单——导入走绝对 tick，三连音原样落进来，根本不经过格子。
 
-### 导入：先只报告，一行 spec 都不生成
+### 导入：先只报告，再全量生成
 
 真实世界的入口往往不是"一句情绪"，而是**已经有一份谱，在上面改**。
 手打 20 小节旋律要几个小时，还要逐音核对（我们错过一次八度）——这是纯摩擦。
@@ -806,11 +806,11 @@ meta:
 - 没展开反复：后面每一小节都错位。
 - **量化**：三连音、装饰音、rubato 落到格子上"差一点点"，文件照常渲染、lint 照常通过。
 
-所以第一步是 `importxml.py --report`：**只读、只报告、不写任何文件**。
+所以顺序是**先报告，再生成**。`ingest.py <file>` 默认只读、只报告、不写任何文件，
 它回答一个问题——"这个文件里到底有什么，哪些我们会丢"。
 
 ```
-  ref-tricky.musicxml
+  ingest.py ref-tricky.musicxml
     score-partwise   2 个声部   2 小节
     divisions [480]  ->  建议 meta.division: 480
     拍号 3/4, 4/4
@@ -836,7 +836,16 @@ meta:
 
 **不设模式闸。** 没有"只导骨架"/"导成品编曲"的开关——那是把自己的顾虑写成语法，
 和 C4 是同一个错误。全量导入，**靠 `origin:` 让"谁的东西"可见**，人再删和改。
-（`origin:` 尚未实现；在此之前导入只到报告为止，P8：不假装。）
+
+```yaml
+parts:
+  - instrument: violin-i
+    origin: {file: ref-tricky.musicxml, part: "Violin I"}   # 这条轨不是我们写的
+```
+
+`origin:` 写进 `parts[]`，`render.py` 打在血统表旁边。于是"全导进来只改一处"和"只取骨架"
+都合法，**区别不在模式开关，而在最后留下了什么**。
+槽位级的 `clone:` / `--ab`（把 A/B 从文件级降到同一份谱里的两条轨）还没做。
 顺带一个真收获：导入一份别人的编曲，等于免费得到**第二个外延**——"对两份外延都成立才算内涵"
 这个判据到今天为止都是手工造出来的，以后可以自动成立。
 
@@ -846,8 +855,35 @@ meta:
 **三连音能无损带过来。** 因为我们走的是绝对 tick，不经过格子——上半年把 `bar × grid × tps`
 换成 tick 那一步，在这里收了利息。
 
-刻意用 stdlib（`xml.etree`），不引 `music21`：这一步只读结构、不解释语义。
-等真要生成 spec，再把它关在一条路上。
+刻意用 stdlib + `defusedxml`（不是裸 `xml.etree`——后者会展开实体，解析不受信文件有 XXE 风险），
+不引 `music21`：解析只读结构、不解释语义。
+
+**名字是 `ingest` 不是 `importxml`。** 它已经会读 MusicXML，将来还要读 Guitar Pro 的 `.gp`。
+格式差异只在一个"解析器"里：文件先变成我们自己那份中间表示（`parse()` 返回的小节/声部/事件），
+之后的 report / dump / `--as-spec` 三步与格式无关。**想加 gp，写一个产出同样 dict 的解析器就行，
+后面三步不用动。** 反过来（让每种格式各自生成 spec）就等于把导入逻辑复制 N 份。
+
+### 导入的第二步：`--as-spec`
+
+```
+ingest.py ref.musicxml --as-spec out.yaml     # 写 out.yaml + ensembles/<stem>.yaml + instruments/*.yaml
+```
+
+三个必须如实说出来的地方：
+
+- **编制里没有的乐器不拒绝。** 按谱面自动生成 `instruments/<slug>.yaml`，音域写成
+  **从这份谱观察到的**（`observed_range` 单独存，`note` 里写明"不是这件乐器的绝对可演奏范围"）。
+  把观察值和声明值混在一起就是假事实。
+- **没有 GM 音源的声部会全部听起来像钢琴。** 这必须打印出来，不能让"渲染成功"冒充"导入成功"。
+- **和声没有 `<harmony>` 标记时**填 `{name: "?", chord: [], bass: 0}` 并提示只能人工补。
+
+写完**立刻调 `render.py` 渲染一次**——不渲染就等于没有验证过（P8）。
+
+验证方式是往返核对：把生成的 spec 里的 `notes` 与直接读文件得到的
+`(绝对 tick, 时值, 音高)` 逐项比。`ref-tricky.musicxml` 三个座位 8/1/4 个事件全部一致
+（含 bar 1 的三连音、bar 2 的 `<backup>` 第二声部、Bb 单簧管的移调）。
+`smoke.sh` 把导入出来的那首谱也跑全套入口——它是唯一用 `notes:`（绝对 tick）写成的谱，
+不走格子那条路。
 
 ### 纲要：内涵是文件，外延是渲染
 
@@ -976,6 +1012,7 @@ solo/mute 在这里切的是**乐谱**并重新渲染，所以它真的改声音
 | **拍号可以变（奇数拍）** | `meter` 段落化，格子数由 `beats × subdivision` 推导；`Bar`/`Meter` 拿绝对 tick 作唯一坐标。`meter-selftest.yaml` 一段 12 小节的真谱：4/4 → 7/8 `[2,2,3]` → 5/4 `[3,2]`，同一句旋律三种写法 | `group` 没进 MIDI（拍号 meta 表达不了分组）；复拍号、曲中变速都没做 |
 | **三连音是精确的，不是近似的** | `tuplet: [3,2]`：4/4 里 24 格 × 80 tick；`--selftest` 手算 3:2 / 5:4 / 7/8 里的 3:2，另有 4 条拒绝。`meter-selftest.yaml` 3-4 小节是真听得出来的三连音踩镲 | 只到手写 `pattern` 层；`degrees` 和导出（`<time-modification>`）未接 |
 | **内涵可以写在文件里** | `guide.intension` 在两份音符层几乎相反的编曲（v3 一锤到底 / 蒸汽机淡出）上**一字不差地成立**；`beats` 在 `audition` 里先于播放打印 | `intension` 只是字符串，不能机检；「必须／不许」拆分未做 |
+| **一个外部谱文件能变成可改的 spec** | `ingest.py` 先报告"有什么、会丢什么"，再 `--as-spec` 生成 spec + 编制 + 乐器（音域标为"观察到的"）；往返核对逐项一致。不设模式闸，`origin:` 让"谁的东西"可见 | MusicXML 一种格式；`clone:` / 槽位级 `--ab` 未做；导出未做 |
 | **走带 + 在场热力图** | `follow.py`：9 行座位 × 每小节一列，宽度 ∝ 时长（4/4 / 7/8 / 5/4 混排时列宽 5/4/6）；整曲渲染一次，走带 = 数组下标；A/B 选段 + 循环 + solo/mute | 交互模式没被自动测过（只测了 `--draw` 和 `--keys`）；`synth` 引擎不支持 solo/mute |
 
 ### B. 已知薄弱
@@ -1055,6 +1092,8 @@ spikes/01/synth.py            零依赖合成器
 spikes/01/measure.py          把渲染结果量出来
 spikes/01/lyrics.py           歌词逐字对到旋律上
 spikes/01/relations.py        成对关系与显著度
+spikes/01/ingest.py           外部谱 → 报告 → spec（MusicXML；格式差异只在解析器里）
+spikes/01/ref-tricky.musicxml 导入自检夹具：三连音 / 连音线 / 装饰音 / backup 双声部 / 移调 / 反复
 samples/                      被接受的版本（工作渲染不进仓库）
 ```
 
