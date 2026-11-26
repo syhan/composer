@@ -81,8 +81,10 @@ STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
 
 
 def midi_of(pitch):
-    return 12 * (int(text(pitch, "octave", 4)) + 1) + STEP[text(pitch, "step", "C")] + int(
-        text(pitch, "alter", 0)
+    return (
+        12 * (int(text(pitch, "octave", 4)) + 1)
+        + STEP[text(pitch, "step", "C")]
+        + int(text(pitch, "alter", 0))
     )
 
 
@@ -168,7 +170,11 @@ def parse_measure(m, ctx, loss, div_note):
                     (ctx["bar"], num(tm, "actual-notes", 1), num(tm, "normal-notes", 1))
                 )
             if grace:
-                loss.add("装饰音", f"bar {ctx['bar']}", "会丢。要保留就得给它位置和时值，我们没有这个表示")
+                loss.add(
+                    "装饰音",
+                    f"bar {ctx['bar']}",
+                    "会丢。要保留就得给它位置和时值，我们没有这个表示",
+                )
             pitch = kid(el, "pitch")
             if pitch is not None:
                 out.append(
@@ -343,7 +349,11 @@ def report(sc):
         loss_set = sc["loss"]
         loss_set.setdefault(
             "三连音",
-            {"n": len(tp), "where": list(dict.fromkeys(f"bar {b}" for b, _a, _n in tp)), "note": ""},
+            {
+                "n": len(tp),
+                "where": list(dict.fromkeys(f"bar {b}" for b, _a, _n in tp)),
+                "note": "",
+            },
         )
         loss_set["三连音"]["note"] = (
             f"{'/'.join(kinds)}，共 {len(tp)} 处。**能无损保留**："
@@ -384,7 +394,6 @@ def dump(sc, want):
             f"{NAME[e['midi'] % 12]}{e['midi'] // 12 - 1:<3} staff {e['staff']} voice {e['voice']}"
         )
     print()
-
 
 
 # ---------- 第二步：生成 spec ----------
@@ -555,12 +564,13 @@ def as_spec(sc, out_path, root=None):
                 )
             notes.append(
                 {
-                    "tick": sum(bticks[b][0] for b in range(1, bar)) + pos * division // (
-                        sc["parts"][seat["events"][0]["part"]]["divisions"] or division
-                    ),
-                    "dur": dur * division // (
-                        sc["parts"][seat["events"][0]["part"]]["divisions"] or division
-                    ),
+                    "tick": sum(bticks[b][0] for b in range(1, bar))
+                    + pos
+                    * division
+                    // (sc["parts"][seat["events"][0]["part"]]["divisions"] or division),
+                    "dur": dur
+                    * division
+                    // (sc["parts"][seat["events"][0]["part"]]["divisions"] or division),
                     "pitch": pitches,
                 }
             )
@@ -693,7 +703,9 @@ def main(argv):
         return 0
     sc = parse(args[0])
     if "--json" in flags:
-        print(json.dumps({k: v for k, v in sc.items() if k != "loss"}, ensure_ascii=False, indent=2))
+        print(
+            json.dumps({k: v for k, v in sc.items() if k != "loss"}, ensure_ascii=False, indent=2)
+        )
         print(json.dumps(sc["loss"], ensure_ascii=False, indent=2))
     elif "--as-spec" in flags:
         out = args[1] if len(args) > 1 else os.path.splitext(args[0])[0] + ".yaml"

@@ -93,10 +93,6 @@ suite farewell-steampunk.yaml 21-24 theremin
 suite meter-selftest.yaml   5-8  theremin
 # 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
 suite "$imp/tricky.yaml"    1-2  violin
-# 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
-suite "$imp/tricky.yaml"    1-2  violin
-# 导入出来的谱：唯一用 `notes:`（绝对 tick）而不是格子写成的谱。
-suite "$imp/tricky.yaml"    1-2  violin
 
 # 音频必须真的有声音，而不是一个空壳文件
 if [ -s "$tmp/farewell-v3.yaml-gm.wav" ]; then

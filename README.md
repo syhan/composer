@@ -10,6 +10,8 @@
 
 它记录：相信什么（哲学）、被什么约束（硬约束）、认为音乐是什么（模型）、现在能做什么（能力）、还有什么没解决（待决）。
 
+**另有一份 `AGENTS.md`**：给协作代理的工程约定——动手前要遵守的硬约束、改代码的规矩、每次改完必须跑的验证、以及一份「踩过的坑」清单。**这份宪章管解释，那份管操作。**
+
 ---
 
 ## 1. 问题
@@ -1106,7 +1108,11 @@ python3 relations.py farewell-v3.yaml
 python3 audition.py farewell-v3.yaml --bars 17-20 --loop 4
 python3 follow.py farewell-v3.yaml                           # 走带 + 热力图（空格停/续，←→ 小节，[ ] 设 A/B）
 python3 follow.py farewell-v3.yaml --draw --no-audio          # 只打一帧，不碰音频
-./smoke.sh                                                   # 所有入口 × 三首谱
+python3 ingest.py ref-tricky.musicxml --report                # 外部谱只读报告
+python3 ingest.py ref-tricky.musicxml --as-spec out.yaml      # 外部谱 → spec + 编制 + 乐器
+python3 render.py --selftest                                  # 变换算子 + 拍号的手算样例
+python3 follow.py --selftest                                 # 键位表 + 状态机的手算样例
+./smoke.sh                                                   # 所有入口 × 四首谱
 ```
 
 ---
