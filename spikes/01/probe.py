@@ -66,7 +66,7 @@ def collect(bars, parts, meter, lo, hi):
             for p, st, du, pitches, v in bars.get(b, []):
                 if p is not part:
                     continue
-                t = du * bar.step_ticks
+                t = du
                 ticks += t
                 ps += list(pitches) * max(1, t // 120)
                 beats += t / (bar.ticks / bar.beats)
@@ -149,7 +149,7 @@ def section_bars(bars, harmony, meter, lo, hi):
         bar = meter[b]
         evs = bars.get(b, [])
         names = {p["id"] for (p, *_r) in evs}
-        beats = sum(du * bar.step_ticks / (bar.ticks / bar.beats) for (_p, _st, du, _ps, _v) in evs)
+        beats = sum(du / (bar.ticks / bar.beats) for (_p, _st, du, _ps, _v) in evs)
         print(
             "    "
             + pad(b, 6)

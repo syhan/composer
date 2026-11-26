@@ -102,14 +102,14 @@ def render(path, out=None):
     for b in sorted(bars):
         bar = meter[b]
         for part, st, du, pitches, vel in bars[b]:
-            t0 = int((bar.start_tick + st * bar.step_ticks) * sec * SR)
+            t0 = int((bar.start_tick + st) * sec * SR)
             kind = kind_of.get(part["id"], "pluck")
             if part.get("drum"):
                 for p in pitches:
                     seg = drum(p, vel)
                     buf[t0 : t0 + len(seg)] += seg[: max(0, total - t0)]
             else:
-                dur = du * bar.step_ticks * sec
+                dur = du * sec
                 for p in pitches:
                     f = 440.0 * 2 ** ((p - 69) / 12)
                     seg = voice(kind, f, dur * 1.02, vel)

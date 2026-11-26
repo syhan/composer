@@ -304,7 +304,7 @@ def onsets(rhythm, grid, where="节奏串"):
     if len(rhythm) != grid:
         raise SystemExit(
             f"{where}: 节奏串 {rhythm!r} 有 {len(rhythm)} 格，这一小节要 {grid} 格"
-            f"（Diff 用 '-' 补齐或删短）"
+            f"（要么用 '-' 补齐，要么删短）"
         )
     bad = sorted(set(rhythm) - set("xX-."))
     if bad:
@@ -315,6 +315,44 @@ def onsets(rhythm, grid, where="节奏串"):
 def runs(rhythm, grid, where="节奏串"):
     ons = onsets(rhythm, grid, where)
     return [(o, (ons[i + 1] if i + 1 < len(ons) else grid) - o) for i, o in enumerate(ons)]
+
+
+def tuplet_of(pat, where):
+    """`tuplet: 3` 或 `[3, 2]` —— n 个音占 m 个正常格的时长。"""
+    tup = pat.get("tuplet")
+    if not tup:
+        return 1, 1
+    if isinstance(tup, int):
+        n, m = tup, 2
+    else:
+        try:
+            n, m = int(tup[0]), int(tup[1])
+        except (TypeError, IndexError, ValueError):
+            raise SystemExit(f"{where}: tuplet 要写成 3 或 [3, 2]，拿到 {tup!r}") from None
+    if n < 2 or m < 1:
+        raise SystemExit(f"{where}: tuplet 的 n 要 >= 2、m 要 >= 1，拿到 [{n}, {m}]")
+    return n, m
+
+
+def pattern_events(pat, bar, where):
+    """节奏串 -> [(起点 tick, 时值 tick)]，外加"一格"在这层里是多少 tick。
+
+    三连音不是近似：division 480 能被 3 整除，一拍三分 = 160 tick。
+    但"落在格子上"这件事在这里就必须放弃——所以下面查整除，
+    除不尽就报错，不要四舍五入到格上（那会安静地错拍，而且图上看不出来）。
+    """
+    n, m = tuplet_of(pat, where)
+    if bar.grid * n % m:
+        raise SystemExit(
+            f"{where}: {bar.beats}/{bar.unit} 一小节 {bar.grid} 格，"
+            f"分成 {n}:{m} 分不均匀（{bar.grid}x{n} 除不断 {m}）"
+        )
+    if bar.step_ticks * m % n:
+        raise SystemExit(f"{where}: 一格 {bar.step_ticks} tick，{n}:{m} 落不到 tick 上")
+    one = bar.step_ticks * m // n
+    nexp = bar.grid * n // m
+    spans = runs(pat["rhythm"], nexp, where)
+    return [(i * one, run * one) for i, run in spans], one
 
 
 # ---------- 变换算子 ----------
@@ -493,13 +531,9 @@ def build_material(spec, meter):
                     raise SystemExit(f"素材 {tr['id']} 引用了尚未定义的轨 {seg['use']}")
                 src_bars = parse_bars(seg.get("from", seg["bars"]), None)
                 sbase = meter[src_bars[0]].start_tick
+                # src["events"] 里已经是 tick（素材层统一用 tick），不要再乘 step_ticks
                 seq = [
-                    (
-                        (meter[b].start_tick - sbase) + st * meter[b].step_ticks,
-                        du * meter[b].step_ticks,
-                        ps,
-                        v,
-                    )
+                    ((meter[b].start_tick - sbase) + st, du, ps, v)
                     for b in src_bars
                     for (st, du, ps, v) in src["events"].get(b, [])
                 ]
@@ -579,15 +613,11 @@ def build_material(spec, meter):
                     raise SystemExit(f"素材 {tr['id']} {seg['bars']}: 变换产生了负位置")
                 bar = meter.at_tick(base + a)
                 off = base + a - bar.start_tick
-                if off % bar.step_ticks or du % bar.step_ticks:
+                if du <= 0:
                     raise SystemExit(
-                        f"素材 {tr['id']} {seg['bars']}: 落在 bar {bar.index}"
-                        f"（{bar.beats}/{bar.unit}，一格 {bar.step_ticks} tick）上的音不在格上"
-                        f"（偏移 {off}、时值 {du} tick）"
+                        f"素材 {tr['id']} {seg['bars']}: bar {bar.index} 上出现空时值"
                     )
-                ev.setdefault(bar.index, []).append(
-                    (off // bar.step_ticks, du // bar.step_ticks, ps, v)
-                )
+                ev.setdefault(bar.index, []).append((off, du, ps, v))
 
         tracks[tr["id"]] = {
             "register": reg,
@@ -677,20 +707,22 @@ def expand(spec, insts, meter):
                     if "extra" in seg:
                         layers.append((seg["extra"], max(30, seg.get("velocity", 80) - 30)))
                     for pat, lvel in layers:
-                        pitch, rhythm = pat["pitch"], pat["rhythm"]
+                        pitch = pat["pitch"]
+                        spans, one = pattern_events(pat, bar, f"{where} {pat['rhythm']!r}")
                         if is_drum:
                             dmap = part["drum_map"]
-                            for st, _du in runs(rhythm, bar.grid, where):
-                                evs.append((st, 1, [dmap[pitch]], lvel))
+                            for st, du in spans:
+                                evs.append((st, min(du, one), [dmap[pitch]], lvel))
                         elif pitch == "arp":
                             tones = resolve("arp", h, part)
-                            for st, du in runs(rhythm, bar.grid, where):
-                                evs.append((st, du, [tones[(st // bar.eighth) % len(tones)]], lvel))
+                            eighth = bar.eighth * bar.step_ticks
+                            for st, du in spans:
+                                evs.append((st, du, [tones[(st // eighth) % len(tones)]], lvel))
                         else:
                             prev = part.get("_prev")
                             ps = resolve(pitch, h, part, prev)
                             part["_prev"] = ps[0]
-                            for st, du in runs(rhythm, bar.grid, where):
+                            for st, du in spans:
                                 evs.append((st, du, [p + tr for p in ps], lvel))
                 bars.setdefault(b, []).extend((part, st, du, ps, v) for (st, du, ps, v) in evs)
 
@@ -975,6 +1007,61 @@ def selftest():
     for t, got_b in wrong:
         print(f"      tick {t} 落在 bar {got_b}")
 
+    # 三连音：division 480 能被 3 整除，所以是精确的 160 tick，不是近似。
+    # 这几条都能手算，故意选"整拍刚好用完"和"分不均匀"两个极端。
+    def _spans(pat, bar):
+        return pattern_events(pat, bar, "t")
+
+    got = _spans({"rhythm": "x" * 24, "tuplet": [3, 2]}, m[1])
+    want = ([i * 80 for i in range(24)], 80)
+    ok = got == ([tuple(x) for x in [(i * 80, 80) for i in range(24)]], 80)
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 三连音 4/4 3:2：24 格 x 80 tick = 1920（一拍三分）")
+    if not ok:
+        print(f"      want {want}\n      got  {got}")
+
+    got = _spans({"rhythm": "x-x-x-" * 4, "tuplet": [3, 2]}, m[1])
+    ok = got[1] == 80 and [a for a, _d in got[0]] == [i * 160 for i in range(12)]
+    ok = ok and all(d == 160 for _a, d in got[0])
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 三连音 4/4：x-x-x- 重复四次 = 12 个八分三连音，每音 160 tick")
+    if not ok:
+        print(f"      got {got}")
+
+    got = _spans({"rhythm": "x" * 42, "tuplet": [3, 2]}, m[5])
+    ok = got[1] == 40 and len(got[0]) == 42 and got[0][-1][0] == 41 * 40
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 三连音 7/8 3:2：42 格 x 40 tick = 1680")
+    if not ok:
+        print(f"      got {got}")
+
+    got = _spans({"rhythm": "x" * 20, "tuplet": [5, 4]}, m[1])
+    ok = got[1] == 96 and len(got[0]) == 20 and got[0][-1][0] == 19 * 96
+    bad += not ok
+    print(f"  {'✓' if ok else '✗'} 五连音 4/4 5:4：20 格 x 96 tick = 1920")
+    if not ok:
+        print(f"      got {got}")
+
+    trejects = [
+        ({"rhythm": "x" * 24, "tuplet": [7, 4]}, m[1], "120 tick 一格除不尽 7"),
+        ({"rhythm": "x" * 42, "tuplet": [7, 4]}, m[5], "60 tick 一格除不尽 7"),
+        ({"rhythm": "x" * 16, "tuplet": [3, 2]}, m[1], "长度本该 24 格"),
+        ({"rhythm": "x" * 24, "tuplet": [1, 2]}, m[1], "n 必须 >= 2"),
+    ]
+    for pat, bar, why in trejects:
+        try:
+            got = pattern_events(pat, bar, "t")
+        except SystemExit as e:
+            ok = True
+            note = str(e)
+        else:
+            ok = False
+            note = f"居然通过了：{got}"
+        bad += not ok
+        print(f"  {'✓' if ok else '✗'} 三连音拒绝：{why}")
+        if not ok:
+            print(f"      {note}")
+
     # 拍号写错必须报错，而不是凑合：这几条都是真会写错的形式。
     rejects = [
         ("group 加不起来", [{"bar": 1, "beats": 7, "unit": 8, "group": [2, 2, 2]}]),
@@ -1044,7 +1131,7 @@ def selftest():
     bad += not ok
     print(f"  {'✓' if ok else '✗'} guide 正常读取（首尾空白去掉，顺序保留）")
 
-    total = len(cases) + 2 + 4 + len(rejects) + 4 + len(grejects) + 1
+    total = len(cases) + 2 + 4 + 4 + len(trejects) + len(rejects) + 4 + len(grejects) + 1
     print(f"\n  {total - bad}/{total} 通过")
     raise SystemExit(1 if bad else 0)
 
@@ -1062,8 +1149,8 @@ def report(bars, parts, meter):
         # tick 而不是格数：拍号一变，一格的长度就变了，累加格数会得到假的拍数。
         iv = sorted(
             (
-                meter[b].start_tick + st * meter[b].step_ticks,
-                meter[b].start_tick + (st + du) * meter[b].step_ticks,
+                meter[b].start_tick + st,
+                meter[b].start_tick + st + du,
                 ps,
             )
             for b, st, du, ps in evs
@@ -1262,8 +1349,8 @@ def build_midi(spec, bars, parts, meter, melody=True, first=1):
             for p, st, du, pitches, vel in bars[bar]:
                 if p is not part:
                     continue
-                s = b.start_tick - t0 + st * b.step_ticks
-                e = s + du * b.step_ticks
+                s = b.start_tick - t0 + st
+                e = s + du
                 for i, pitch in enumerate(pitches):
                     evs.append((s, 2 + i, bytes([0x90 | ch, pitch & 0x7F, min(127, vel)])))
                     evs.append((e, 2 + i, bytes([0x80 | ch, pitch & 0x7F, 0])))
@@ -1292,7 +1379,7 @@ def _sounding(bars, meter, b):
     if b > 1:
         prev = meter[b - 1]
         for p, st, du, *_r in bars.get(b - 1, []):
-            if st + du > prev.grid:
+            if st + du > prev.ticks:
                 names.add(p["name"])
     return names
 
@@ -1326,16 +1413,21 @@ def roll(spec, bars, parts, meter):
                 if b > 1:
                     prev = meter[b - 1]
                     for p, st, du, _pitches, _vel in bars.get(b - 1, []):
-                        if p is not part or st + du <= prev.grid:
+                        if p is not part or st + du <= prev.ticks:
                             continue
-                        over = (st + du - prev.grid) * prev.step_ticks // meter[b].step_ticks
+                        over = (st + du - prev.ticks) // meter[b].step_ticks
                         for k in range(min(grid, over)):
                             line[k] = "|"
+                bl = meter[b]
                 for p, st, du, _pitches, _vel in bars.get(b, []):
                     if p is not part:
                         continue
-                    for k in range(st, min(grid, st + du)):
-                        line[k] = "#" if k == st else "|"
+                    # 三连音这类不在格上的起音：画在最近的格子上，但标 *，
+                    # 免得"图上有、位置却错了一点点"被当成格内音符。显示量化，IR 不量化。
+                    k0 = st // bl.step_ticks
+                    mark = "*" if st % bl.step_ticks else "#"
+                    for k in range(k0, min(grid, -(-(st + du) // bl.step_ticks))):
+                        line[k] = mark if k == k0 else "|"
                 cells.append("".join(line))
             print(f"  {part['name'][:9]:<10}" + " ".join(cells))
         print()
